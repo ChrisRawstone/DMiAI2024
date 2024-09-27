@@ -1,28 +1,16 @@
 import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import Dataset, DataLoader
+from torchvision import transforms, models
 
-class MyNeuralNet(torch.nn.Module):
-    """ Basic neural network class. 
-    
-    Args:
-        in_features: number of input features
-        out_features: number of output features
-    
-    """
-    def __init__(self, in_features: int, out_features: int) -> None:
-        super(MyNeuralNet, self).__init__()
-
-        self.l1 = torch.nn.Linear(in_features, 500)
-        self.l2 = torch.nn.Linear(500, out_features)
-        self.r = torch.nn.ReLU()
-    
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass of the model.
+class SimpleClassifier(nn.Module):
+    def __init__(self, num_classes=2):
+        super(SimpleClassifier, self).__init__()
+        # Use a pre-trained model like ResNet18 for image classification
+        self.model = models.resnet18(weights=True)
+        # Modify the final layer to match the number of classes
+        self.model.fc = nn.Linear(self.model.fc.in_features, num_classes)
         
-        Args:
-            x: input tensor expected to be of shape [N,in_features]
-
-        Returns:
-            Output tensor with shape [N,out_features]
-
-        """
-        return self.l2(self.r(self.l1(x)))
+    def forward(self, x):
+        return self.model(x)
