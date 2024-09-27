@@ -1,28 +1,23 @@
-import torch
+import numpy as np
 
-class MyNeuralNet(torch.nn.Module):
-    """ Basic neural network class. 
-    
-    Args:
-        in_features: number of input features
-        out_features: number of output features
-    
+### CALL YOUR CUSTOM MODEL VIA THIS FUNCTION ###
+def predict(corrupted_image,tissue_image,mask_image,vertebrae) -> np.ndarray:
+    reconstruction = fill_tissue(
+        corrupted_image,
+        tissue_image,
+        mask_image,
+        fill_value=84)
+    return reconstruction
+
+### DUMMY MODEL ###
+def fill_tissue(corrupted_image:np.ndarray, 
+                tissue_image:np.ndarray,
+                mask_image:np.ndarray,
+                fill_value:int) -> np.ndarray:
     """
-    def __init__(self, in_features: int, out_features: int) -> None:
-        super(MyNeuralNet, self).__init__()
-
-        self.l1 = torch.nn.Linear(in_features, 500)
-        self.l2 = torch.nn.Linear(500, out_features)
-        self.r = torch.nn.ReLU()
-    
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass of the model.
-        
-        Args:
-            x: input tensor expected to be of shape [N,in_features]
-
-        Returns:
-            Output tensor with shape [N,out_features]
-
-        """
-        return self.l2(self.r(self.l1(x)))
+    Simple model that fills the body mask with fill_value
+    """
+    reconstruced_image = corrupted_image.astype(float)
+    fill_mask = (tissue_image>0) & (mask_image>0)
+    reconstruced_image[fill_mask] = fill_value
+    return reconstruced_image
