@@ -2,9 +2,18 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 from PIL import Image, ImageOps
+from pathlib import Path
 import os
+import sys
 import pandas as pd
 from src.utils import tif_to_ndarray
+
+# Get the script's directory
+script_dir = Path(__file__).resolve()
+# Go two levels up from the script's directory
+parent_parent_dir = script_dir.parent.parent.parent
+# Change the current working directory to the parent-parent directory
+os.chdir(parent_parent_dir)
 
 # Define PadToSize to work with transforms.Compose
 class PadToSize:
@@ -45,6 +54,7 @@ class LoadTifDataset(Dataset):
             transform (callable, optional): Optional transform to be applied on a sample.
         """
         self.image_dir = image_dir
+        #script_dir = os.path.dirname(os.path.realpath(__file__))
         self.labels_df = pd.read_csv(csv_file_path)
         self.transform = transform
 
@@ -98,21 +108,21 @@ class LoadTifDataset(Dataset):
         """
         return self.load_data(idx)
 
-# # Define the padding size
-# target_width = 1500
-# target_height = 1470
+# Define the padding size
+target_width = 1500
+target_height = 1470
 
-# # Define transformations
-# transform = transforms.Compose([
-#     PadToSize(target_width=target_width, target_height=target_height),  # Custom padding transform
-#     transforms.ToTensor()])
+# Define transformations
+transform = transforms.Compose([
+    PadToSize(target_width=target_width, target_height=target_height),  # Custom padding transform
+    transforms.ToTensor()])
 
-# # Example usage
-# image_dir = "data/training"
-# csv_file_path = "data/training.csv"
+# Example usage
+image_dir = "data/training"
+csv_file_path = "data/training.csv"
 
-# # Create the dataset with padding transformation
-# dataset = LoadTifDataset(image_dir=image_dir, csv_file_path=csv_file_path, transform=transform)
+# Create the dataset with padding transformation
+dataset = LoadTifDataset(image_dir=image_dir, csv_file_path=csv_file_path, transform=transform)
 
-# # Create the dataloader for batch processing
-# dataloader = DataLoader(dataset, batch_size=16, shuffle=True)
+# Create the dataloader for batch processing
+dataloader = DataLoader(dataset, batch_size=16, shuffle=True)
