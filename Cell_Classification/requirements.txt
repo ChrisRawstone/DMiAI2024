@@ -6,4 +6,6 @@ opencv-python
 numpy
 matplotlib
 loguru
+torch
+torchvision
 pandas
