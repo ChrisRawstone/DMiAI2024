@@ -1,1 +1,7 @@
 torch >= 2.1.0
+sumolib
+traci
+uvicorn
+fastapi
+loguru
+gunicorn
