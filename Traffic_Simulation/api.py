@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sim.dtos import TrafficSimulationPredictResponseDto, TrafficSimulationPredictRequestDto, SignalDto
 
 HOST = "0.0.0.0"
-PORT = 9051
+PORT = 8080
 
 app = FastAPI()
 start_time = time.time()
