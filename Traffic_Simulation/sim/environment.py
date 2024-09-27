@@ -254,14 +254,19 @@ class TrafficSimulationEnvHandler():
                         green_lights.remove(group)
                         logic_errors.append(f"Invalid green light combination at time step {self.get_simulation_ticks()}: {group} and {other_green_lights}. Removed {group} from green lights.")
                         break
-
-
+        
+        for group in all_signals.keys():
+            self.next_groups[group] = 'red'
+            
         # Set the green lights in the next groups
         for group in green_lights:
             self.next_groups[group] = 'green'
 
+        # print(f'green_lights:   ', green_lights)
         if len(logic_errors) == 0:
             return None
+        
+        
 
         logger.info(f"logic_errors: {logic_errors}")
         return ";".join(logic_errors)
@@ -278,6 +283,7 @@ class TrafficSimulationEnvHandler():
             if not group in self.group_states:
                 continue
             current_color, time = self.group_states[group]
+            print(f'group_states: {self.group_states}')
             if color == current_color:
                 self.group_states[group] = (current_color, time+1)
             elif current_color == 'redamber':
@@ -334,8 +340,6 @@ class TrafficSimulationEnvHandler():
 
     def _set_signal_state(self):
         phase_string = self._get_phase_string()
-        #replace r by g
-        phase_string = phase_string.replace('r', 'g')
         
         self._traci_connection.trafficlight.setRedYellowGreenState(
             self.junction, phase_string)
@@ -379,10 +383,10 @@ class TrafficSimulationEnvHandler():
 
         simulationTicks = self.warm_up_ticks
 
-        self.set_next_signals({
-            'B2': 'green',
-            'B1': 'green'
-        })
+        # self.set_next_signals({
+        #     'B2': 'green',
+        #     'B1': 'green'
+        # })
 
         for i in range(simulationTicks):
             self._run_one_tick()

@@ -29,49 +29,64 @@ def run_game():
     sleep(0.2)
 
     # For logging
-    actions = {}
+    current_signal_phase = 0  # To track which signal is green
+    change_duration = 5  # Duration for each signal phase in seconds
+    last_change_time = time()  # Time when the last change occurred
+    
+    # Initialize duration tracking
+    signal_durations = None
+    first_iteration = True  # Flag to check if it's the first iteration
+
 
     while True:
-
         state = output_queue.get()
 
         if state.is_terminated:
             p.join()
             break
         
-        # Insert your own logic here to parse the state and 
-        # select the next action to take
-
-        print(f'Vehicles: {state.vehicles}')
-        print(f'Signals: {state.signals}')
-
-        signal_logic_errors = None
-        prediction = {}
-        prediction["signals"] = []
+        # Initialize signal durations on the first iteration
+        if first_iteration:
+            # Create lists and dictionaries in one go
+            signals = [signal.name for signal in state.signals]
+            states = {signal.name: signal.state for signal in state.signals}
+            
+            signal_durations = {signal: 0 for signal in signals}
+            
+            # {signal: (state, duration)}
+            signal_state_duration = {signal: (states[signal], signal_durations[signal]) for signal in signals}
+            first_iteration = False
+            
+        # update signal state and duration without updating the lists
+        for i in range(len(signals)):
+            signal_state_duration[signals[i]] = (state.signals[i].state, signal_durations[signals[i]]+time()-last_change_time)
+            if signal_state_duration[signals[i]][0] == 'green': #resetting time if signal is green
+                signal_state_duration[signals[i]] = (signal_state_duration[signals[i]][0], 0)
+            
         
-        # Update the desired phase of the traffic lights
+        print(f'signal_state_duration: {signal_state_duration}')
+        
+        #setting current signal phase to green and rest to red
         next_signals = {}
         current_tick = state.simulation_ticks
-
-        for signal in prediction['signals']:
-            actions[current_tick] = (signal['name'], signal['state'])
-            next_signals[signal['name']] = signal['state']
-
-        signal_logic_errors = input_queue.put(next_signals)
-
-        if signal_logic_errors:
-            errors.append(signal_logic_errors)
-
-
+        if time() - last_change_time > change_duration:
+            current_signal_phase = (current_signal_phase + 1) % len(signals)  # Cycle through signals
+            last_change_time = time()  # Reset the timer
+            
+        for idx, signal in enumerate(signals):
+            if idx == current_signal_phase:
+                next_signals[signal] = 'green'
+            else:
+                next_signals[signal] = 'red'
+        
+        # Send the next signals to the input queue
+        input_queue.put(next_signals)
 
     # End of simulation, return the score
-
-    # Transform the score to the range [0, 1]
     if state.total_score == 0:
         state.total_score = 1e9
 
     inverted_score = 1. / state.total_score
-
 
     return inverted_score
 
