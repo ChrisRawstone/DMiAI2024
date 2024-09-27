@@ -334,6 +334,8 @@ class TrafficSimulationEnvHandler():
 
     def _set_signal_state(self):
         phase_string = self._get_phase_string()
+        #replace r by g
+        phase_string = phase_string.replace('r', 'g')
         
         self._traci_connection.trafficlight.setRedYellowGreenState(
             self.junction, phase_string)
@@ -365,7 +367,7 @@ class TrafficSimulationEnvHandler():
         return observed_vehicles
 
     def demo(self):
-        sumoBinary = checkBinary('sumo')
+        sumoBinary = checkBinary('sumo-gui')
 
         logger.info('Traffic simulation - starting sumo....')
 
@@ -444,7 +446,7 @@ class TrafficSimulationEnvHandler():
         self._simulation_is_running = True
 
         logger.info('Traffic simulation - starting sumo....')
-        sumoBinary = checkBinary('sumo')
+        sumoBinary = checkBinary('sumo-gui')
 
         sim_instance = uuid4().hex
 
