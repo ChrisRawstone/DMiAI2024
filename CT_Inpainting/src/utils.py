@@ -96,15 +96,21 @@ def plot_prediction(corrupted_image,tissue_image,mask_image,reconstruction,verte
     plt.title(f"Reconstruction")
 
     plt.subplot(1,6,5)
-    plt.imshow(ct,cmap="gray",vmin=0,vmax=255)
+    plt.imshow(reconstruction,cmap="gray",vmin=0,vmax=255) # ct
     plt.axis("off")
     plt.title(f"CT")
 
+    # delete this
     plt.subplot(1,6,6)
+    plt.imshow(reconstruction,cmap="gray",vmin=0,vmax=255) # ct
     plt.axis("off")
-    plt.imshow(err,cmap="bwr",vmin=-50,vmax=50)
-    plt.colorbar()
-    plt.title(f"Error")
+    plt.title(f"CT")
+
+    # plt.subplot(1,6,6)
+    # plt.axis("off")
+    # plt.imshow(err,cmap="bwr",vmin=-50,vmax=50)
+    # plt.colorbar()
+    # plt.title(f"Error")
 
     plt.tight_layout()
     plt.savefig("plots/inpainting_example.jpg")

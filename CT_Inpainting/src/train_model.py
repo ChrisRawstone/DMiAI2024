@@ -77,7 +77,13 @@ class CTInpaintingDataset(Dataset):
             vertebrae_tensor = torch.full((1, H, W), vertebrae_normalized)
         else:
             # Handle case without transforms (not used here)
-            pass
+            # If no transform is provided, just convert to tensor manually
+            corrupted = torch.tensor(np.array(corrupted), dtype=torch.float32).unsqueeze(0)
+            mask = torch.tensor(np.array(mask), dtype=torch.float32).unsqueeze(0)
+            tissue = torch.tensor(np.array(tissue), dtype=torch.float32).unsqueeze(0)
+            ct = torch.tensor(np.array(ct), dtype=torch.float32).unsqueeze(0)
+            H, W = corrupted.shape[1], corrupted.shape[2]
+            vertebrae_tensor = torch.full((1, H, W), vertebrae_normalized, dtype=torch.float32)
 
         # Combine inputs into a single tensor
         input_tensor = torch.cat([corrupted, mask, tissue, vertebrae_tensor], dim=0)  # Shape: [4, H, W]
@@ -121,13 +127,13 @@ class CTInpaintingDataset(Dataset):
 # predicted_image.save('predicted_ct.png')
 
 def main():
-    num_epochs = 5  # Adjust the number of epochs as needed
+    num_epochs = 20  # Adjust the number of epochs as needed
     learning_rate=1e-4
     batch_size = 4
     api_key = "c187178e0437c71d461606e312d20dc9f1c6794f"
 
     # use small dataset for testing
-    test_small_dataset = True
+    test_small_dataset = False
 
     wandb.login(key=api_key)
 
@@ -287,8 +293,11 @@ def main():
     # Finish the W&B run
     wandb.finish()
 
-    # Save the trained model
-    torch.save(model.state_dict(), 'models/ct_inpainting_unet.pth')
+    if test_small_dataset:
+        torch.save(model.state_dict(), 'models/shit_ct_inpainting_unet.pth')
+    else:   
+        # Save the trained model
+        torch.save(model.state_dict(), 'models/ct_inpainting_unet_10.pth')
 
 
 
