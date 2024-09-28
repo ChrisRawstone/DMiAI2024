@@ -2,14 +2,14 @@ import uvicorn
 from fastapi import FastAPI
 import datetime
 import time
-from model import predict
+from src.models.model import predict
 from loguru import logger
 from pydantic import BaseModel
 from typing import List
 from src.utils import load_sample
 
 HOST = "0.0.0.0"
-PORT = 8080
+PORT = 9090
 
 # Images are loaded via cv2, encoded via base64 and sent as strings
 # See utils.py for details
