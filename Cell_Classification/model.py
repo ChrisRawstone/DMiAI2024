@@ -8,7 +8,7 @@ from src.data.make_dataset import PadToSize
 def predict(image: np.ndarray) -> int:
 
     model = SimpleClassifier(num_classes=2)  
-    model.load_state_dict(torch.load('/Users/jasmink.j.thari/GitHub/DM-i-AI-2024/Cell_Classification/model.pth'))
+    model.load_state_dict(torch.load('/dtu/blackhole/00/156512/DM-i-AI-2024/Cell_Classification/resnet16_dummy.pth'))
     model.eval()
 
     target_width = 1500
