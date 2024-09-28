@@ -35,6 +35,8 @@ def train_model(model, dataloader, criterion, optimizer, device, num_epochs=5):
         
     print("Training complete!")
 
+    return model 
+
 # Load data 
 
 # Define the padding size
@@ -59,4 +61,7 @@ criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
 # Train the model
-train_model(model, dataloader, criterion, optimizer, device, num_epochs=5)
+model = train_model(model, dataloader, criterion, optimizer, device, num_epochs=20)
+
+# save model 
+torch.save(model.state_dict(), 'models/resnet16_dummy.pth')
