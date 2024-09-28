@@ -110,21 +110,35 @@ class LoadTifDataset(Dataset):
         """
         return self.load_data(idx)
 
-# Define the padding size
-target_width = 1500
-target_height = 1470
+# # Define the padding size
+# target_width = 1500
+# target_height = 1470
 
-# Define transformations
-transform = transforms.Compose([
-    PadToSize(target_width=target_width, target_height=target_height),  # Custom padding transform
-    transforms.ToTensor()])
+# # Define transformations for training data
+# train_transform = transforms.Compose([
+#     PadToSize(target_width=target_width, target_height=target_height),
+#     transforms.Resize((224, 224)),
+#     transforms.RandomHorizontalFlip(),
+#     transforms.RandomRotation(15),
+#     transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
+#     transforms.Grayscale(num_output_channels=3),
+#     transforms.ToTensor(),
+# ])
+
+# # Define transformations for validation data (no augmentation)
+# val_transform = transforms.Compose([
+#     PadToSize(target_width=target_width, target_height=target_height),
+#     transforms.Resize((224, 224)),
+#     transforms.Grayscale(num_output_channels=3),
+#     transforms.ToTensor(),
+# ])
 
 # Example usage
-image_dir = "data/training"
-csv_file_path = "data/training.csv"
+# image_dir = "data/training"
+# csv_file_path = "data/training.csv"
 
-# Create the dataset with padding transformation
-dataset = LoadTifDataset(image_dir=image_dir, csv_file_path=csv_file_path, transform=transform)
+# # Create the dataset with padding transformation
+# dataset = LoadTifDataset(image_dir=image_dir, csv_file_path=csv_file_path, transform=transform)
 
-# Create the dataloader for batch processing
-dataloader = DataLoader(dataset, batch_size=16, shuffle=True)
+# # Create the dataloader for batch processing
+# dataloader = DataLoader(dataset, batch_size=16, shuffle=True)
