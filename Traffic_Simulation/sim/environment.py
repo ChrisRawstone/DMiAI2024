@@ -1,505 +1,206 @@
-
+import gym
+from gym import spaces
+import numpy as np
 from time import time
-from time import sleep
-from uuid import uuid4
-import threading
+from collections import defaultdict
 
-from sumolib import checkBinary  # noqa
-import traci  # noqa
+# Function to compute unique valid actions from allowed combinations
+def compute_unique_valid_actions(allowed_combinations):
+    actions = set()  # Use a set to automatically handle duplicates
 
-import os
-import sys
-from multiprocessing import Queue
-import yaml
-import pathlib
+    # Extract pairs of signals from allowed combinations
+    for combo in allowed_combinations:
+        for group in combo.groups:
+            # Sort the pair to avoid duplicates in reverse order (e.g., ['A1', 'A2'] and ['A2', 'A1'])
+            pair = tuple(sorted([combo.name, group]))
+            actions.add(pair)
 
-from loguru import logger
+    # Convert the set back to a list of actions
+    return [list(action) for action in actions]
 
-from dtos import (
-    TrafficSimulationPredictRequestDto, VehicleDto, SignalDto, LegDto, AllowedGreenSignalCombinationDto
-)
-
-def load_configuration(configuration_file, start_time, test_duration_seconds):
-
-    model_folder = pathlib.Path(configuration_file).parent
-
-    with open(configuration_file, 'r') as cfile:
-        configuration = yaml.safe_load(cfile)
-
-
-    for intersection in configuration['intersections']:
-        connections = []
-        signal_groups = []
-        legs = {}
-
-        for group in intersection['groups']:
-            signal_groups.append(group)
-
-        for leg in intersection['legs']:
-            l = {}
-            l['name'] = leg['name']
-            l['lanes'] = leg['lanes']
-            l['radar'] = leg['radar']
-            l['groups'] = leg['groups']
-            l['segments'] = leg['segments']
-
-            legs[leg['name']] = l
-
-        for connection in intersection['connections']:
-            connections.append(Connection(
-                connection['index'],
-                connection['groups'],
-                connection['priority']
-            ))
-
-        env = TrafficSimulationEnvHandler(start_time, 
-                                        test_duration_seconds,
-                                        model_folder,
-                                        intersection['groups'],
-                                        connections,
-                                        intersection['junction'],
-                                        signal_groups,
-                                        legs,
-                                        allowed_green_signal_combinations=intersection['allowed_green_signal_combinations'],
-                                        amber_time=4,
-                                        red_amber_time=2,
-                                        min_green_time=6)
-
-        return env
+class TrafficEnv(gym.Env):
+    def __init__(self, input_queue, output_queue, change_duration=15):
+        super(TrafficEnv, self).__init__()
+        self.input_queue = input_queue
+        self.output_queue = output_queue
+        self.change_duration = change_duration
+        self.last_action = None
+        self.last_change_time = time()
         
-    return None
-
-def load_and_run_simulation(configuration_file, start_time, test_duration_seconds, random_state, input_q, output_q, error_q):
-    env = load_configuration(configuration_file, start_time, test_duration_seconds)
-    env.set_queues(input_q, output_q, error_q)
-
-    env.set_random_state(random_state)
-    env.run_simulation()
-    return env.get_observable_state()
-
-if 'SUMO_HOME' in os.environ:
-    tools = os.path.join(os.environ['SUMO_HOME'], 'tools')
-    sys.path.append(tools)
-
-lock = threading.Lock()
-
-class Connection:
-    def __init__(self, number, groups, priority):
-        self.number = number
-        self.groups = groups
-        self.priority = priority
-
-class TrafficSimulationEnvHandler():
-    def __init__(self, 
-                 start_time, 
-                 test_duration_seconds, 
-                 model_folder,
-                 groups, 
-                 connections, 
-                 junction, 
-                 signal_groups,
-                 legs,
-                 allowed_green_signal_combinations,
-                 amber_time, 
-                 red_amber_time,
-                 min_green_time) -> None:
+        # Get the initial state
+        self.state = self._get_state_with_timeout()
         
-        # Initialize simulation
-        self._game_ticks = 0
-        self._total_score = 0
-        self._start_time = start_time
-        self._test_duration_seconds = test_duration_seconds
-        self._model_folder = model_folder
-        self._random = False
+        if self.state is None:
+            raise RuntimeError("[ERROR] Could not receive initial state from simulation.")
 
-        self.maxdistance = 100
-        self.groups = groups
-        self.connections = connections
+        self.signal_groups = self.state.signal_groups
         
-        self.junction = junction
-        self.signal_groups = signal_groups
+        # Initialize the allowed green signal combinations using the existing method
+        self.actions = self.initialize_actions()
+        
+        # Action space is defined based on allowed green signal combinations
+        self.action_space = spaces.Discrete(len(self.actions))
 
-        self.legs_dto = []
-        self.intern_legs = legs
-
-        for leg_name, l in legs.items():
-            # Populate the array for the observable state
-            self.legs_dto.append(LegDto(name=leg_name, 
-                                    lanes=l['lanes'],
-                                    signal_groups=l['groups']))
-            
-        self.allowed_green_signal_combinations = {}
-
-        for g in allowed_green_signal_combinations:           
-            self.allowed_green_signal_combinations[g['signal'][0]] = g['allowed']
-
-
-        self.allowed_green_signal_comb_dto = []
-
-        for g in allowed_green_signal_combinations:
-            self.allowed_green_signal_comb_dto.append(AllowedGreenSignalCombinationDto(name=g['signal'][0], groups=g['allowed']))
-
-        self.amber_time = amber_time
-        self.red_amber_time = red_amber_time
-        self.min_green_time = min_green_time
-
-        self.group_states = {}
-
-        for group in groups:
-            self.group_states[group] = ('red', 0)
-
-        self.next_groups = {}
-
-        for group in groups:
-            self.next_groups[group] = 'red'
-
-        self.vehicle_waiting_time = {}
-        self.observable_state = TrafficSimulationPredictRequestDto(
-            vehicles=[],
-            total_score=0,
-            simulation_ticks=0,
-            signals=[],
-            signal_groups=self.signal_groups,
-            legs=self.legs_dto,
-            allowed_green_signal_combinations=self.allowed_green_signal_comb_dto,
-            is_terminated=False
+        # Observation space should account for total and stopped vehicles for each signal group
+        self.observation_space = spaces.Box(
+            low=0, high=np.inf, shape=(len(self.signal_groups) * 2,), dtype=np.float32
         )
 
-        self._is_initialized = False
-        self._simulation_is_running = False
-        self.simulation_ticks = 0
-
-        self.delay_penalty_coefficient = 1.5
-        self.delay_penalty_start_seconds = 90
-        self.warm_up_ticks = 10
-
-        self.errors = []
-
-        self._traci_connection = None
-
-        self._input_queue = None
-        self._output_queue = None
-        self._error_queue = None
-
-    def set_queues(self, input_q, output_q, error_q):
-        self._input_queue = input_q
-        self._output_queue = output_q
-        self._error_queue = error_q
-        
-    def distance_to_stop(self, vehicle):
-        for (intersection, _, distance, _) in self._traci_connection.vehicle.getNextTLS(vehicle):
-            if intersection == self.junction:
-                return distance
-        return None
-    
-    def set_random_state(self, random):
-        self._random = random
-
-    def _calculate_score(self):
-        score = 0.0
-
-        for vehicle, waiting_time in self.vehicle_waiting_time.items():
-            score += waiting_time
-
-            if waiting_time > self.delay_penalty_start_seconds:
-                score += (self.vehicle_waiting_time[vehicle] - self.delay_penalty_start_seconds)**self.delay_penalty_coefficient
-
-
-        return score
-    
-    def get_simulation_is_running(self):
-        if self._is_initialized == False:
-            return True
-        else:
-            return self._simulation_is_running
-    
-    def get_simulation_ticks(self): 
-        return self.simulation_ticks
-    
-    def get_observable_state(self):
-        return self.observable_state
-    
-    def _validate_next_signals(self, next_groups):
-
-        all_signals = {}
-        logic_errors = []
-        green_lights = []
-
-        # Per default, all signals are red
-        for s in self.next_groups:
-            all_signals[s] = "red"
-
-        for group, color in next_groups.items():
-            if not group in self.next_groups:
-                # Is this even possible to get here?
-                logic_errors.append(f"Invalid signal group {group} at time step {self.get_simulation_ticks()}")
-                continue
-
-            c = color.lower()
-            all_signals[group] = c
-
-            if c == 'green':
-                green_lights.append(group)
-
-        # Check the logic according to the green light combinations
-        for group, color in all_signals.items():
-            if color == "green":
-                # Check if we can allow this green light in combination with the other green light requests
-
-                for other_green_lights in green_lights:
-                    if group == other_green_lights:
-                        continue
-
-                    if not other_green_lights in self.allowed_green_signal_combinations[group]:
-                        green_lights.remove(group)
-                        logic_errors.append(f"Invalid green light combination at time step {self.get_simulation_ticks()}: {group} and {other_green_lights}. Removed {group} from green lights.")
-                        break
-        
-        for group in all_signals.keys():
-            self.next_groups[group] = 'red'
-            
-        # Set the green lights in the next groups
-        for group in green_lights:
-            self.next_groups[group] = 'green'
-
-        # print(f'green_lights:   ', green_lights)
-        if len(logic_errors) == 0:
+    def _get_state_with_timeout(self, timeout=5):
+        try:
+            state = self.output_queue.get(timeout=timeout)
+            print(f"[STATE] Received state: {state}")
+            return state
+        except Exception as e:
+            print(f"[ERROR] Timeout or error while getting state: {e}")
             return None
-        
-        logger.info(f"logic_errors: {logic_errors}")
-        return ";".join(logic_errors)
-                    
-    def set_next_signals(self, next_groups):
 
-        errors = self._validate_next_signals(next_groups)
-        
-        return errors
+    def initialize_actions(self):
+        """
+        Automatically create unique actions by combining the name and groups from the allowed green signal combinations,
+        and eliminating redundancies and duplicates.
+        """
+        return compute_unique_valid_actions(self.state.allowed_green_signal_combinations)
 
-    def _update_group_states(self, next_groups):
-        for group, new_color in next_groups.items():
-            if group not in self.group_states:
-                continue
-            
-            current_color, time_in_state = self.group_states[group]
-            print(f'group_states before: {self.group_states}')
+    def step(self, action):
+        """
+        Apply the action based on the combination of the name and groups.
+        Lock the action for the duration (using simulation ticks), and replay the last action if it's still locked.
+        """
+        current_tick = self.state.simulation_ticks
+        ticks_since_last_change = current_tick - self.last_change_tick
 
-            if new_color == current_color:
-                # Increment time spent in current state
-                self.group_states[group] = (current_color, time_in_state + 1)
-            else:
-                # Handle transitions
-                if current_color == 'green' and new_color == 'red':
-                    # Ensure minimum green time before transitioning to amber
-                    if time_in_state >= self.min_green_time:
-                        self.group_states[group] = ('amber', 1)
-                    else:
-                        self.group_states[group] = (current_color, time_in_state + 1)
-                
-                elif current_color == 'amber' and new_color == 'red':
-                    # Transition from amber to red
-                    if time_in_state >= self.amber_time:
-                        self.group_states[group] = ('red', 1)
-                    else:
-                        self.group_states[group] = ('amber', time_in_state + 1)
-                
-                elif current_color == 'red' and new_color == 'green':
-                    # Transition from red to redamber, then green
-                    self.group_states[group] = ('redamber', 1)
-                
-                elif current_color == 'redamber' and new_color == 'green':
-                    # Transition from redamber to green
-                    if time_in_state >= self.red_amber_time:
-                        self.group_states[group] = ('green', 1)
-                    else:
-                        self.group_states[group] = ('redamber', time_in_state + 1)
-                
-                else:
-                    # Reset state if transitioning directly from one color to another
-                    self.group_states[group] = (new_color, 1)
+        # If this is the first step, set last_action to the current action
+        if self.last_action is None:
+            self.last_action = action
 
-            print(f'group_states after: {self.group_states}')
-   
-    def _color_to_letter(self, color):
-        if color == 'red':
-            return 'r'
-        elif color == 'amber' or color == 'redamber':
-            return 'y'
-        elif color == 'green':
-            return 'g'
+        # Only allow signal change if enough simulation ticks have passed
+        if ticks_since_last_change >= self.change_duration:
+            # Apply the selected allowed green light combination
+            selected_combination = self.actions[action]
+
+            # Set all signals to red first
+            next_signals = {signal.name: 'red' for signal in self.state.signals}
+
+            # Set the selected combination signals to green
+            for signal in selected_combination:
+                next_signals[signal] = 'green'
+
+            # Update the current signal combination and reset the tick timer
+            self.last_action = action  # Store the last action taken
+            self.last_change_tick = current_tick  # Reset the tick timer
+
+            # Send new signal states to the input queue
+            self.input_queue.put(next_signals)
+
         else:
-            raise ValueError(f"Got unknown color {color}")
+            # Replay the last action (keep the last signal configuration)
+            selected_combination = self.actions[self.last_action]
 
-    def _get_phase_string(self):
-        res = ""
-        for connection in self.connections:
-            to_set = 'r'
-            for g in connection.groups:
-                (color, _time) = self.group_states[g]
-                color = self._color_to_letter(color)
-                if to_set == 'r':
-                    to_set = color
-                elif to_set == 'y' and color == 'g':
-                    to_set == 'g'
-                elif to_set == 'g' or to_set == 'y':
-                    pass
-                else:
-                    raise ValueError("Invalid state reached in get_phase_string")
-            if to_set == 'g' and connection.priority:
-                to_set = 'G'
-            res += to_set
-        assert(len(res) == len(self.connections))
+            # Set all signals to red first
+            next_signals = {signal.name: 'red' for signal in self.state.signals}
 
-        return res
+            # Keep the last selected combination signals green
+            for signal in selected_combination:
+                next_signals[signal] = 'green'
 
-    def _set_signal_state(self):
-        phase_string = self._get_phase_string()
+            # Resend the same signal states to the input queue
+            self.input_queue.put(next_signals)
+
+        # Advance the simulation step and get the new state
+        self.state = self.output_queue.get()
+
+        # Extract the new state (e.g., vehicle count, signal status)
+        self.current_state = self.extract_state(self.state)
+
+        # Calculate reward based on traffic performance (e.g., minimize vehicle waiting time)
+        reward = self.calculate_reward(self.state)
+
+        # Simulation done after a fixed number of ticks (10 minutes or 600 ticks)
+        done = self.state.simulation_ticks >= 600
+
+        return self.current_state, reward, done, {}
+
+    def extract_state(self, state_payload):
+        """
+        Extract state from the payload based on vehicle counts and their speed.
+        We'll count the number of vehicles per leg and how many are 'stopped'.
+        """
+        # Create a dictionary to count vehicles per leg
+        leg_vehicle_count = {leg: 0 for leg in self.signal_groups}
+        leg_stopped_vehicle_count = {leg: 0 for leg in self.signal_groups}
         
-        self._traci_connection.trafficlight.setRedYellowGreenState(
-            self.junction, phase_string)
-        
-    def _update_vehicles(self):
-                        
-        observed_vehicles = []
-
-        for leg_name, values in self.intern_legs.items():
-            segments = values['segments']
-
-            for segment in segments:
-                vehicles = list(traci.edge.getLastStepVehicleIDs(segment))
-                for vehicle in vehicles:
-                    distance = self.distance_to_stop(vehicle)
-                    if distance == None or distance > self.maxdistance:
-                        continue
-                    vehicle_speed = abs(traci.vehicle.getSpeed(vehicle))
-
-                    observed_vehicles.append(VehicleDto(speed=round(vehicle_speed, 1), 
-                                                        distance_to_stop=round(distance, 1),
-                                                        leg=leg_name))
-
-                    if vehicle_speed < 0.5: # Vehicle travels at less than 1.8 km/h
-                        if vehicle not in self.vehicle_waiting_time:
-                            self.vehicle_waiting_time[vehicle] = 0
-                        self.vehicle_waiting_time[vehicle] += 1
-
-        return observed_vehicles
-
-    def demo(self):
-        sumoBinary = checkBinary('sumo-gui')
-
-        logger.info('Traffic simulation - starting sumo....')
-
-        sim_instance = uuid4().hex
-
-        traci.start([sumoBinary, "--start", "--random", "--quit-on-end", "-c", (self._model_folder / "net.sumocfg").as_posix()], label=sim_instance)
-        self._traci_connection = traci.getConnection(sim_instance)
-        self._is_initialized = True
-
-        simulationTicks = self.warm_up_ticks
-
-        # self.set_next_signals({
-        #     'B2': 'green',
-        #     'B1': 'green'
-        # })
-
-        for i in range(simulationTicks):
-            self._run_one_tick()
-
-        logger.info('Traffic simulation - finished....')
-
-        self._traci_connection.close()
-
-        return self.observable_state
-
-    def _run_one_tick(self, terminates_now=False):
-        self._traci_connection.simulationStep()
-        self.simulation_ticks += 1
-
-        observed_vehicles = []
-        signals = []
-
-        # Get the current state of the simulation
-        observed_vehicles = self._update_vehicles()
-
-        # Update the score
-        self._total_score = self._calculate_score()
-
-        # Get the next phase from the request and set it
-        with lock:
-            try:
-                if self._input_queue:
-                    next_groups = self._input_queue.get_nowait()
-
-                    signal_logic_errors = self.set_next_signals(next_groups)
-
-                    if self._error_queue and signal_logic_errors:
-                        self._error_queue.put(signal_logic_errors)
-
-                self._update_group_states(self.next_groups)
-            except Exception as e:
-                self.errors.append(e)
-
-        self._set_signal_state()
-
-        for group, state in self.group_states.items():
-            signals.append(SignalDto(name=group, state=state[0]))
-
-        # Update the observable state
-        self.observable_state = TrafficSimulationPredictRequestDto(
-            vehicles=observed_vehicles,
-            total_score=self._total_score,
-            simulation_ticks=self.simulation_ticks,
-            signals=signals,
-            legs=self.legs_dto,
-            signal_groups=self.signal_groups,
-            allowed_green_signal_combinations=self.allowed_green_signal_comb_dto,
-            is_terminated=terminates_now
-        )       
-
-        if self._output_queue:
-            self._output_queue.put(self.observable_state)         
-
-    def run_simulation(self):
-
-        self._simulation_is_running = True
-
-        logger.info('Traffic simulation - starting sumo....')
-        sumoBinary = checkBinary('sumo-gui')
-
-        sim_instance = uuid4().hex
-
-        if self._random:
-            traci.start([sumoBinary, "--start", "--random", "--quit-on-end", "-c", (self._model_folder / "net.sumocfg").as_posix()], label=sim_instance)
-        else:
-            traci.start([sumoBinary, "--start", "--quit-on-end", "-c", (self._model_folder / "net.sumocfg").as_posix()], label=sim_instance)
-
-        self._traci_connection = traci.getConnection(sim_instance)
-        self._is_initialized = True
-        
-        self.simulation_ticks = 0
-
-        for i in range(self.warm_up_ticks):
-            self._run_one_tick()
-
-        while True:
-            logger.info(f'Traffic simulation - tick {self.simulation_ticks}....')
+        # Loop through all vehicles in the state
+        for vehicle in state_payload.vehicles:
+            # Count total vehicles for each leg
+            if vehicle.leg in leg_vehicle_count:
+                leg_vehicle_count[vehicle.leg] += 1
             
-            if self.simulation_ticks < (self._test_duration_seconds + self.warm_up_ticks):
-                self._run_one_tick()
-                sleep(1)
-            else:
-                self._run_one_tick(terminates_now=True)
-                break
+            # Count stopped or very slow vehicles (speed < 1.0)
+            if vehicle.speed < 1.0 and vehicle.leg in leg_stopped_vehicle_count:
+                leg_stopped_vehicle_count[vehicle.leg] += 1
+        
+        # Convert counts into a state vector, e.g., [total_vehicles_A1, stopped_vehicles_A1, total_vehicles_B1, ...]
+        state_vector = []
+        for leg in self.signal_groups:
+            state_vector.append(leg_vehicle_count[leg])
+            state_vector.append(leg_stopped_vehicle_count[leg])
+        
+        return np.array(state_vector)
 
-        self._traci_connection.close()
-        self._simulation_is_running = False
+    def calculate_reward(self, state_payload):
+        """
+        Calculate the reward based on traffic efficiency.
+        Penalize the agent based on the number of vehicles that are stopped or moving slowly.
+        """
+        total_stopped_vehicles = 0
+        
+        # Count all vehicles with speed < 1.0, considering them as "stopped"
+        for vehicle in state_payload.vehicles:
+            if vehicle.speed < 1.0:
+                total_stopped_vehicles += 1
+        
+        # Negative reward proportional to the number of stopped vehicles
+        reward = -total_stopped_vehicles
+        
+        return reward
+
+    def reset(self):
+        print(f"[RESET] Attempting to reset the environment.")
+
+        try:
+            # Optionally, send a reset command to the simulation
+            self.input_queue.put({"command": "reset"})  # If your simulation accepts reset commands
+
+            # Wait for the simulation to reset
+            self.state = self.output_queue.get(timeout=5)
+            print(f"[RESET] Received new state after reset: {self.state}")
+
+            if self.state.is_terminated:
+                print("[RESET] Simulation has terminated and cannot be reset.")
+                return None
+
+            # Reset any internal state here
+            self.last_change_tick = self.state.simulation_ticks  # Reset the tick timer
+
+            # Ensure vehicles and signals are reset
+            if len(self.state.vehicles) > 0:
+                print(f"[RESET WARNING] Vehicles were not reset properly. Clearing manually.")
+                self.state.vehicles.clear()  # Ensure the vehicles list is cleared
+
+            # Reset signals to red
+            next_signals = {signal.name: 'red' for signal in self.state.signals}
+            self.input_queue.put(next_signals)
+
+            print(f"[RESET] Successfully reset the environment.")
+
+            # Extract the initial state
+            return self.extract_state(self.state)
+
+        except Exception as e:
+            print(f"[ERROR] Timeout or error while resetting environment: {e}")
+            return None
 
 
-
-
-
-
-
-
-
-    
-    
+    def render(self, mode='human'):
+        pass

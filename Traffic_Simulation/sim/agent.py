@@ -1,10 +1,8 @@
 from stable_baselines3 import PPO
-from trafficenv import TrafficEnv, check_env
+from trafficenv import TrafficEnv
 # Initialize the environment
 env = TrafficEnv()
 
-# Check if the environment follows Gym API (optional)
-check_env(env)
 
 # Create and train the PPO model
 model = PPO("MlpPolicy", env, verbose=1)
