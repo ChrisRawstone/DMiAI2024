@@ -12,7 +12,7 @@ from tqdm import tqdm  # Import tqdm for progress bars
 import matplotlib.pyplot as plt  # Import matplotlib for visualization
 import numpy as np
 from src.models.model import UNet
-
+import datetime
 
 
 
@@ -76,14 +76,7 @@ class CTInpaintingDataset(Dataset):
             H, W = corrupted.shape[1], corrupted.shape[2]
             vertebrae_tensor = torch.full((1, H, W), vertebrae_normalized)
         else:
-            # Handle case without transforms (not used here)
-            # If no transform is provided, just convert to tensor manually
-            corrupted = torch.tensor(np.array(corrupted), dtype=torch.float32).unsqueeze(0)
-            mask = torch.tensor(np.array(mask), dtype=torch.float32).unsqueeze(0)
-            tissue = torch.tensor(np.array(tissue), dtype=torch.float32).unsqueeze(0)
-            ct = torch.tensor(np.array(ct), dtype=torch.float32).unsqueeze(0)
-            H, W = corrupted.shape[1], corrupted.shape[2]
-            vertebrae_tensor = torch.full((1, H, W), vertebrae_normalized, dtype=torch.float32)
+            assert False, "Transform is required"
 
         # Combine inputs into a single tensor
         input_tensor = torch.cat([corrupted, mask, tissue, vertebrae_tensor], dim=0)  # Shape: [4, H, W]
@@ -100,34 +93,8 @@ class CTInpaintingDataset(Dataset):
 
 
 
-
-
-
-
-# Load the model for inference (if needed)
-# model.load_state_dict(torch.load('ct_inpainting_unet.pth'))
-# model.eval()
-
-# Example of making predictions on new data
-# def predict(model, input_tensor):
-#     model.eval()
-#     with torch.no_grad():
-#         input_tensor = input_tensor.to(device)
-#         output = model(input_tensor.unsqueeze(0))  # Add batch dimension
-#         output = output.squeeze(0)  # Remove batch dimension
-#         output = output.cpu()
-#     return output
-
-# To test on a single sample (replace 'sample_idx' with an index)
-# sample_idx = 0
-# input_tensor, _ = dataset[sample_idx]
-# predicted_output = predict(model, input_tensor)
-# Convert the predicted output to PIL Image and save or display
-# predicted_image = transforms.ToPILImage()(predicted_output)
-# predicted_image.save('predicted_ct.png')
-
 def main():
-    num_epochs = 20  # Adjust the number of epochs as needed
+    num_epochs = 7  # Adjust the number of epochs as needed
     learning_rate=1e-4
     batch_size = 4
     api_key = "c187178e0437c71d461606e312d20dc9f1c6794f"
@@ -243,7 +210,7 @@ def main():
                     val_bar.update(1)
 
                     # Visualize the first few reconstructed images and ground truth
-                    if batch_idx == 0:  # Visualize the first batch only
+                    if batch_idx == 1:  # Visualize the first batch only
                         inputs_np = inputs[0, 0].cpu().numpy()  # Original corrupted image
                         mask_np = inputs[0, 1].cpu().numpy()  # Mask image
                         reconstructed_np = outputs[0, 0].cpu().numpy()  # Reconstructed image
@@ -295,9 +262,13 @@ def main():
 
     if test_small_dataset:
         torch.save(model.state_dict(), 'models/shit_ct_inpainting_unet.pth')
-    else:   
+    else:
+        # get time stamp
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+
         # Save the trained model
-        torch.save(model.state_dict(), 'models/ct_inpainting_unet_10.pth')
+        torch.save(model.state_dict(), f'models/ct_inpainting_unet_{timestamp}.pth')
+
 
 
 

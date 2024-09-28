@@ -1,5 +1,5 @@
 from utils import l1_score, plot_prediction, load_sample
-from src.models.model import predict
+from src.baseline import predict
 
 PATIENT_IX = "000_0"
 
@@ -14,6 +14,6 @@ vertebrae = sample["vertebrae"]
 reconstructed_image = predict(corrupted_image,tissue_image,mask_image,vertebrae)
 
 # Plot and score prediction
-plot_prediction(corrupted_image,tissue_image,mask_image,reconstructed_image,vertebrae,ct_image)
+plot_prediction(corrupted_image,tissue_image,mask_image,reconstructed_image,vertebrae,ct_image, name="baseline_example.jpg")
 l1 = l1_score(ct_image,corrupted_image)
 print(f"L1 score: {l1:.03f}")

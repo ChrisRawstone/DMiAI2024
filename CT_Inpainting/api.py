@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from src.models.model import UNet
 import torch
-from src.predict_model import model_predict
+from src.predict_model import predict, apply_only_to_mask
 
 HOST = "0.0.0.0"
 PORT = 9090
@@ -56,12 +56,13 @@ def predict_endpoint(request: InpaintingPredictRequestDto):
 
     # Initialize or load the trained model
     model = UNet(in_channels=4, out_channels=1)  # Create an instance of the UNet model
-    model.load_state_dict(torch.load("models/ct_inpainting_unet.pth", map_location=device))  # Load trained weights
+    model.load_state_dict(torch.load("models/ct_inpainting_unet_20240928_162225.pth", map_location=device))  # Load trained weights
     model.to(device)
 
     # Predict reconstruction using the model
-    reconstructed_image = model_predict(corrupted_image, tissue_image, mask_image, vertebrae, model)
+    reconstructed_image = predict(corrupted_image, tissue_image, mask_image, vertebrae, model)
     
+    reconstructed_image = apply_only_to_mask(corrupted_image, tissue_image, mask_image, reconstructed_image)
 
 
     # Validate image format
