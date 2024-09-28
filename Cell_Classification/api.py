@@ -6,7 +6,7 @@ from model import predict
 from loguru import logger
 from pydantic import BaseModel
 from typing import List
-from Cell_Classification.src.utils import load_sample
+from src.utils import load_sample
 
 HOST = "0.0.0.0"
 PORT = 8080
