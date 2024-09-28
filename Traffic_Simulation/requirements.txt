@@ -4,4 +4,3 @@ uvicorn
 fastapi
 loguru
 gunicorn
-pyyaml
