@@ -126,7 +126,7 @@ criterion = nn.CrossEntropyLoss(weight=class_weights)
 optimizer = optim.Adam(model.model.fc.parameters(), lr=0.0001)  # Reduced learning rate for fine-tuning
 
 # Train the model
-num_epochs = 50
+num_epochs = 70
 model = train_model(model, train_dataloader, criterion, optimizer, device, num_epochs=num_epochs)
 
 score = predict_local(model, train_dataloader, calculate_custom_score, device)
@@ -134,52 +134,52 @@ print(score)
 
 
 
-################## AE
-# Loss function and optimizer
-autoencoder = Autoencoder(latent_dim=256).to(device)
-criterion = nn.MSELoss()  # Use MSE loss for image reconstruction
-optimizer = optim.Adam(autoencoder.parameters(), lr=0.001)
+# ################## AE
+# # Loss function and optimizer
+# autoencoder = Autoencoder(latent_dim=256).to(device)
+# criterion = nn.MSELoss()  # Use MSE loss for image reconstruction
+# optimizer = optim.Adam(autoencoder.parameters(), lr=0.001)
 
-# Training loop
-for epoch in range(num_epochs):
-    autoencoder.train()
-    running_loss = 0.0
-    for inputs, _ in train_dataloader:  # No need for labels when training the autoencoder
-        inputs = inputs.to(device)
-        optimizer.zero_grad()
+# # Training loop
+# for epoch in range(num_epochs):
+#     autoencoder.train()
+#     running_loss = 0.0
+#     for inputs, _ in train_dataloader:  # No need for labels when training the autoencoder
+#         inputs = inputs.to(device)
+#         optimizer.zero_grad()
         
-        # Forward pass
-        outputs, latent_space = autoencoder(inputs)
-        loss = criterion(outputs, inputs)  # Reconstruction loss
-        loss.backward()
-        optimizer.step()
+#         # Forward pass
+#         outputs, latent_space = autoencoder(inputs)
+#         loss = criterion(outputs, inputs)  # Reconstruction loss
+#         loss.backward()
+#         optimizer.step()
         
-        running_loss += loss.item()
+#         running_loss += loss.item()
     
-    print(f"Epoch {epoch + 1}, Loss: {running_loss / len(train_dataloader)}")
+#     print(f"Epoch {epoch + 1}, Loss: {running_loss / len(train_dataloader)}")
 
-# Training the classifier using latent space representations
-classifier = ClassifierOnAE(latent_dim=256, num_classes=2).to(device)
-classifier_optimizer = optim.Adam(classifier.parameters(), lr=0.001)
-classifier_criterion = nn.CrossEntropyLoss()
+# # Training the classifier using latent space representations
+# classifier = ClassifierOnAE(latent_dim=256, num_classes=2).to(device)
+# classifier_optimizer = optim.Adam(classifier.parameters(), lr=0.001)
+# classifier_criterion = nn.CrossEntropyLoss()
 
-for epoch in range(num_epochs):
-    classifier.train()
-    running_loss = 0.0
-    for inputs, labels in train_dataloader:  # Use only labeled data here
-        inputs, labels = inputs.to(device), labels.to(device)
+# for epoch in range(num_epochs):
+#     classifier.train()
+#     running_loss = 0.0
+#     for inputs, labels in train_dataloader:  # Use only labeled data here
+#         inputs, labels = inputs.to(device), labels.to(device)
         
-        # Get the latent space representation from the autoencoder
-        _, latent_space = autoencoder(inputs)
+#         # Get the latent space representation from the autoencoder
+#         _, latent_space = autoencoder(inputs)
         
-        # Train the classifier on latent space
-        outputs = classifier(latent_space)
-        loss = classifier_criterion(outputs, labels)
-        classifier_optimizer.zero_grad()
-        loss.backward()
-        classifier_optimizer.step()
+#         # Train the classifier on latent space
+#         outputs = classifier(latent_space)
+#         loss = classifier_criterion(outputs, labels)
+#         classifier_optimizer.zero_grad()
+#         loss.backward()
+#         classifier_optimizer.step()
         
-        running_loss += loss.item()
+#         running_loss += loss.item()
     
-    print(f"Epoch {epoch + 1}, Classifier Loss: {running_loss / len(train_dataloader)}")
+#     print(f"Epoch {epoch + 1}, Classifier Loss: {running_loss / len(train_dataloader)}")
 

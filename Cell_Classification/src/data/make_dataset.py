@@ -91,6 +91,7 @@ class LoadTifDataset(Dataset):
         
         # Convert ndarray to PIL Image for transformations
         image = Image.fromarray(image)
+        image = image.convert('RGB')
         
         # Apply the transformations, including padding
         if self.transform:
