@@ -107,5 +107,5 @@ def plot_prediction(corrupted_image,tissue_image,mask_image,reconstruction,verte
     plt.title(f"Error")
 
     plt.tight_layout()
-    plt.savefig("inpainting_example.jpg")
+    plt.savefig("plots/inpainting_example.jpg")
     plt.show()

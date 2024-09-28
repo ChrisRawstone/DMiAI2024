@@ -1,5 +1,5 @@
 from utils import l1_score, plot_prediction, load_sample
-from model import predict
+from src.models.model import predict
 
 PATIENT_IX = "000_0"
 
