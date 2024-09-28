@@ -1,4 +1,4 @@
-from Cell_Classification.src.utils import tif_to_ndarray
+from src.utils import tif_to_ndarray
 from model import predict
 
 CELL_IMG = "data/training/007.tif" 
