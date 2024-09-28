@@ -37,7 +37,7 @@ class CustomImageDataset(Dataset):
 # Define the main function
 def main():
     # Hyperparameters
-    num_epochs = 5
+    num_epochs = 20
     batch_size = 4
     learning_rate = 0.000001  # Increased learning rate
     pos_weight = 2.0  # Increased pos_weight to give more weight to minority class
@@ -46,8 +46,8 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Paths
-    data_dir = "data/training"
-    csv_path = "data/training.csv"
+    data_dir = "data/validation"
+    csv_path = "data/validation.csv"
     plot_dir = "plots"
     os.makedirs(plot_dir, exist_ok=True)
 
