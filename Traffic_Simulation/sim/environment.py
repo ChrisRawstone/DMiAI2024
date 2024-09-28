@@ -266,8 +266,6 @@ class TrafficSimulationEnvHandler():
         if len(logic_errors) == 0:
             return None
         
-        
-
         logger.info(f"logic_errors: {logic_errors}")
         return ";".join(logic_errors)
                     
@@ -278,34 +276,49 @@ class TrafficSimulationEnvHandler():
         return errors
 
     def _update_group_states(self, next_groups):
-
-        for group, color in next_groups.items():
-            if not group in self.group_states:
+        for group, new_color in next_groups.items():
+            if group not in self.group_states:
                 continue
-            current_color, time = self.group_states[group]
-            print(f'group_states: {self.group_states}')
-            if color == current_color:
-                self.group_states[group] = (current_color, time+1)
-            elif current_color == 'redamber':
-                if time == self.red_amber_time:
-                    self.group_states[group] = ('green', 1)
-                else:
-                    self.group_states[group] = ('redamber', time+1)
-            elif current_color == "amber":
-                if time == self.amber_time:
-                    self.group_states[group] = ('red', 1)
-                else:
-                    self.group_states[group] = ('amber', time+1)
-            elif color == 'red' and current_color == 'green':
-                if time == self.min_green_time:
-                    self.group_states[group] = ('amber', 1)
-                else:
-                    self.group_states[group] = ('green', time+1)
-            elif color == 'green' and current_color == 'red':
-                self.group_states[group] = ('redamber', 1)
-            else:
-                raise Exception("Invalid state transition at tick {self.simulation_ticks}, {current_color} -> {color}")
             
+            current_color, time_in_state = self.group_states[group]
+            print(f'group_states before: {self.group_states}')
+
+            if new_color == current_color:
+                # Increment time spent in current state
+                self.group_states[group] = (current_color, time_in_state + 1)
+            else:
+                # Handle transitions
+                if current_color == 'green' and new_color == 'red':
+                    # Ensure minimum green time before transitioning to amber
+                    if time_in_state >= self.min_green_time:
+                        self.group_states[group] = ('amber', 1)
+                    else:
+                        self.group_states[group] = (current_color, time_in_state + 1)
+                
+                elif current_color == 'amber' and new_color == 'red':
+                    # Transition from amber to red
+                    if time_in_state >= self.amber_time:
+                        self.group_states[group] = ('red', 1)
+                    else:
+                        self.group_states[group] = ('amber', time_in_state + 1)
+                
+                elif current_color == 'red' and new_color == 'green':
+                    # Transition from red to redamber, then green
+                    self.group_states[group] = ('redamber', 1)
+                
+                elif current_color == 'redamber' and new_color == 'green':
+                    # Transition from redamber to green
+                    if time_in_state >= self.red_amber_time:
+                        self.group_states[group] = ('green', 1)
+                    else:
+                        self.group_states[group] = ('redamber', time_in_state + 1)
+                
+                else:
+                    # Reset state if transitioning directly from one color to another
+                    self.group_states[group] = (new_color, 1)
+
+            print(f'group_states after: {self.group_states}')
+   
     def _color_to_letter(self, color):
         if color == 'red':
             return 'r'
