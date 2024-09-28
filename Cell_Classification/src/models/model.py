@@ -6,6 +6,7 @@ import torch.nn as nn
 from torchvision import transforms, models
 from PIL import Image
 import numpy as np
+import cv2
 
 # Define the device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

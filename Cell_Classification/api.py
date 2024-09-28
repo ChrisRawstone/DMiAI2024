@@ -1,5 +1,7 @@
+# api.py
+
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 import datetime
 import time
 from src.models.model import predict
@@ -7,14 +9,14 @@ from loguru import logger
 from pydantic import BaseModel
 from typing import List
 from src.utils import load_sample
+import numpy as np
 
 HOST = "0.0.0.0"
 PORT = 9090
 
-# Images are loaded via cv2, encoded via base64 and sent as strings
-# See utils.py for details
+# Define the request and response schemas
 class CellClassificationPredictRequestDto(BaseModel):
-    cell: str
+    cell: str  # Base64 encoded image string
 
 class CellClassificationPredictResponseDto(BaseModel):
     is_homogenous: int
@@ -24,34 +26,48 @@ start_time = time.time()
 
 @app.get('/api')
 def hello():    
+    uptime = str(datetime.timedelta(seconds=int(time.time() - start_time)))
     return {
         "service": "cell-segmentation-usecase",
-        "uptime": '{}'.format(datetime.timedelta(seconds=time.time() - start_time))
+        "uptime": uptime
     }
 
 @app.get('/')
 def index():
-    return "Your endpoint is running!"
+    return {"message": "Your endpoint is running!"}
 
 @app.post('/predict', response_model=CellClassificationPredictResponseDto)
 def predict_endpoint(request: CellClassificationPredictRequestDto):
+    try:
+        # Decode and load the image
+        sample = load_sample(request.cell)
+        image = sample.get("image")
+        
+        if image is None:
+            raise ValueError("Image decoding failed.")
 
-    # Decode request
-    image_id = load_sample(request.cell)
+        # Ensure the image is in the correct format
+        if not isinstance(image, np.ndarray):
+            raise TypeError("Decoded image is not a NumPy array.")
 
-    predicted_homogenous_state = predict(image_id)
-    
-    # Return the encoded image to the validation/evalution service
-    response = CellClassificationPredictResponseDto(
-        is_homogenous=predicted_homogenous_state
-    )
-    
-    return response
+        # Make prediction by passing the image array, not the dict
+        predicted_homogenous_state = predict(image)
+        
+        # Return the prediction
+        response = CellClassificationPredictResponseDto(
+            is_homogenous=predicted_homogenous_state
+        )
+        
+        return response
+
+    except Exception as e:
+        logger.error(f"Prediction error: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
 
 if __name__ == '__main__':
-
     uvicorn.run(
         'api:app',
         host=HOST,
-        port=PORT
+        port=PORT,
+        reload=True  # Enable auto-reload for development; disable in production
     )
