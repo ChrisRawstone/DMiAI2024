@@ -1,180 +1,180 @@
+import os
+import pandas as pd
 import torch
+from torch.utils.data import Dataset, DataLoader
+from torchvision import models, transforms
+from PIL import Image
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader
-from torchvision import transforms, models
-from collections import Counter
-import numpy as np
-from models.model import SimpleClassifier
-# from predict_model import predict_local
-from data.make_dataset import LoadTifDataset, PadToSize
+from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
-import numpy as np
-# Function to train the model
-import torch
+import matplotlib.image as mpimg
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(f'I am on the device: {device}')
+# Custom Dataset class
+class CustomImageDataset(Dataset):
+    def __init__(self, annotations_df, root_dir, transform=None, id_length=3):
+        self.annotations = annotations_df.reset_index(drop=True)
+        self.root_dir = root_dir
+        self.transform = transform
+        self.id_length = id_length
 
-def calculate_custom_score(a_0, a_1, n_0, n_1):
-    # Ensure no division by zero
-    if n_0 == 0 or n_1 == 0:
-        return 0
-    return (a_0 * a_1) / (n_0 * n_1)
+    def __len__(self):
+        return len(self.annotations)
 
-def train_model(model, train_dataloader, criterion, optimizer, device, num_epochs=5):
+    def __getitem__(self, index):
+        # Format the image_id with leading zeros based on `id_length`
+        img_id = str(self.annotations.iloc[index, 0]).zfill(self.id_length)
+        img_path = os.path.join(self.root_dir, f"{img_id}.tif")
+
+        image = Image.open(img_path).convert("RGB")
+        label = int(self.annotations.iloc[index, 1])  # Convert label to int (0 or 1)
+
+        if self.transform:
+            image = self.transform(image)
+        return image, label
+
+# Define the main function
+def main():
+    # Hyperparameters
+    num_epochs = 10
+    batch_size = 16
+    learning_rate = 0.001
+
+    # Paths
+    data_dir = "data/training"
+    csv_path = "data/training.csv"
+    plot_dir = "plots"
+    os.makedirs(plot_dir, exist_ok=True)
+
+    # Image transformations
+    transform = transforms.Compose([
+        transforms.Resize((224, 224)),  # ResNet expects 224x224 images
+        transforms.ToTensor(),
+        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+    ])
+
+    # Load annotations
+    annotations = pd.read_csv(csv_path)
+
+    # Split the dataset into training and validation sets
+    train_df, val_df = train_test_split(
+        annotations,
+        test_size=0.2,
+        stratify=annotations.iloc[:, 1],  # Stratify on the labels
+        random_state=42
+    )
+
+    # Create datasets
+    train_dataset = CustomImageDataset(
+        annotations_df=train_df, root_dir=data_dir, transform=transform
+    )
+    val_dataset = CustomImageDataset(
+        annotations_df=val_df, root_dir=data_dir, transform=transform
+    )
+
+    # Create dataloaders
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+
+    # Load pre-trained ResNet50 model
+    model = models.resnet50(pretrained=True)
+
+    # Modify the final fully connected layer for binary classification
+    num_features = model.fc.in_features
+    model.fc = nn.Linear(num_features, 1)  # Binary classification
+
+    # Define loss and optimizer
+    criterion = nn.BCEWithLogitsLoss()  # Binary Cross-Entropy with Logits Loss
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+
+    # Check if GPU is available and move the model to GPU if possible
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = model.to(device)
+
+    # Training loop
     for epoch in range(num_epochs):
         model.train()
         running_loss = 0.0
-        
-        # Training phase
-        for inputs, labels in train_dataloader:
-            inputs = inputs.to(device)
-            labels = labels.to(device)
+
+        for images, labels in train_loader:
+            images, labels = images.to(device), labels.float().to(device)  # Move to GPU and change to float
 
             # Zero the parameter gradients
             optimizer.zero_grad()
 
             # Forward pass
-            outputs = model(inputs)
-            loss = criterion(outputs, labels)
-            
-            # Backward pass and optimize
+            outputs = model(images)
+            loss = criterion(outputs.squeeze(), labels)  # Squeeze for correct loss shape
+
+            # Backward pass and optimization
             loss.backward()
             optimizer.step()
 
-            running_loss += loss.item() * inputs.size(0)  # Multiply by batch size
+            running_loss += loss.item()
 
-        epoch_loss = running_loss / len(train_dataloader.dataset)
-        print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {epoch_loss:.4f}")
+        print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {running_loss/len(train_loader):.4f}")
+
+        # Validation
+        model.eval()
+        val_running_loss = 0.0
+        class_samples = {0: 0, 1: 0}  # To keep track of how many images we have per class
+        max_samples_per_class = 2
+        images_to_plot = {0: [], 1: []}  # To store image paths per class
+
+        with torch.no_grad():
+            for images, labels in val_loader:
+                images, labels = images.to(device), labels.float().to(device)
+
+                outputs = model(images)
+                loss = criterion(outputs.squeeze(), labels)
+                val_running_loss += loss.item()
+
+                # Apply sigmoid to outputs and get predictions
+                probs = torch.sigmoid(outputs.squeeze())
+                preds = (probs >= 0.5).long()
+
+                # For plotting, collect image paths where needed
+                for i in range(images.size(0)):
+                    label = int(labels[i].item())
+                    pred = int(preds[i].item())
+                    img_id = str(val_df.iloc[i, 0]).zfill(3)
+                    img_path = os.path.join(data_dir, f"{img_id}.tif")
+
+                    if class_samples[label] < max_samples_per_class:
+                        images_to_plot[label].append((img_path, label, pred))
+                        class_samples[label] += 1
+                    if class_samples[0] >= max_samples_per_class and class_samples[1] >= max_samples_per_class:
+                        break
+                if class_samples[0] >= max_samples_per_class and class_samples[1] >= max_samples_per_class:
+                    break
+
+        val_loss = val_running_loss / len(val_loader)
+        print(f"Validation Loss: {val_loss:.4f}")
+
+        # Plotting
+        fig, axes = plt.subplots(2, max_samples_per_class, figsize=(10, 5))
+        for idx, label in enumerate([0, 1]):
+            for jdx in range(max_samples_per_class):
+                img_path, true_label, pred_label = images_to_plot[label][jdx]
+
+                # Use matplotlib.image to read and plot .tif images
+                img = mpimg.imread(img_path)
+                axes[idx, jdx].imshow(img)
+                axes[idx, jdx].axis('off')
+                axes[idx, jdx].set_title(f'True: {true_label}, Pred: {pred_label}')
+                # Save individual plot images
         
-        # # Evaluation phase on training set
-        # model.eval()
-        # total_0 = 0
-        # total_1 = 0
-        # correct_0 = 0
-        # correct_1 = 0
-        
-        # with torch.no_grad():
-        #     for inputs, labels in train_dataloader:
-        #         inputs = inputs.to(device)
-        #         labels = labels.to(device)
-
-        #         outputs = model(inputs)
-        #         _, predicted = torch.max(outputs, 1)
-        #         # Calculate correct predictions and totals for each class
-        #         total_0 += (labels == 0).sum().item()
-        #         total_1 += (labels == 1).sum().item()
-
-        #         correct_0 += ((predicted == 0) & (labels == 0)).sum().item()
-        #         correct_1 += ((predicted == 1) & (labels == 1)).sum().item()
+        plt.suptitle(f'Epoch {epoch+1} Validation Results')
+        plt.tight_layout()
+        plt.savefig(os.path.join(plot_dir, f'epoch_{epoch+1}_class_{label}_img.png'))
                 
-        #         print(f'labels:{labels}')
-        #         print(f'predicted:{predicted}')
 
-        # # Calculate the custom score
-        # custom_score = calculate_custom_score(correct_0, correct_1, total_0, total_1)
-        # print(f"Custom Score after Epoch {epoch + 1}: {custom_score:.4f}")
-        
-    print("Training complete!")
-    
-    return model
+        plt.show()
 
-# Define the padding size
-target_width = 1500
-target_height = 1470
+    print("Training completed.")
 
-train_transform = transforms.Compose([
-    PadToSize(target_width=target_width, target_height=target_height),
-    transforms.Resize((224, 224)),
-    # transforms.RandomHorizontalFlip(),
-    # transforms.RandomRotation(15),
-    #transforms.Grayscale(num_output_channels=3),  # Convert to 3-channel grayscale if needed
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),  # Normalize to ImageNet mean and std
+    # Save the trained model
+    torch.save(model.state_dict(), "resnet50_homogeneity_detection.pth")
 
-])
-
-# Define transformations for validation data (no augmentation)
-val_transform = transforms.Compose([
-    PadToSize(target_width=target_width, target_height=target_height),
-    transforms.Resize((224, 224)),
-    #transforms.Grayscale(num_output_channels=3),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),  # Normalize to ImageNet mean and std
-
-])
-
-image_dir = "data/training"
-csv_file_path = "data/training.csv"
-train_dataset = LoadTifDataset(image_dir=image_dir, csv_file_path=csv_file_path, transform=train_transform)
-train_dataloader = DataLoader(train_dataset, batch_size=16, shuffle=True)
-
-# Function to unnormalize and plot images
-def imshow(img, mean, std):
-    # Unnormalize
-    img = img.numpy().transpose((1, 2, 0))  # Convert from Tensor [C, H, W] to [H, W, C]
-    img = std * img + mean  # Revert normalization
-    img = np.clip(img, 0, 1)  # Clip values to [0, 1] range for valid image
-    plt.imshow(img)
-    plt.axis('off')  # Hide axis for a cleaner plot
-    plt.show()
-
-# Plot a batch of images from the dataloader
-def plot_batch_images(dataloader, mean, std):
-    # Get a batch of images and labels from the dataloader
-    images, labels = next(iter(dataloader))  # Fetch one batch of data
-
-    # Plot the images in the batch
-    plt.figure(figsize=(12, 12))  # Set the figure size
-    for i in range(len(images)):
-        plt.subplot(4, 4, i + 1)  # Display images in a 4x4 grid
-        imshow(images[i], mean, std)
-        plt.title(f'Label: {labels[i].item()}')
-    plt.tight_layout()
-    plt.show()
-
-# Define the mean and std values used for normalization (the ones used during transforms)
-mean = np.array([0.485, 0.456, 0.406])
-std = np.array([0.229, 0.224, 0.225])
-
-# Plot images from your dataloader (assuming batch_size is 16 or adjust grid accordingly)
-plot_batch_images(train_dataloader, mean, std)
-
-
-
-# labels = [label for _, label in train_dataloader.dataset]
-# print(f"Class distribution: {Counter(labels)}")
-
-# # Get the labels from the dataset
-# labels = train_dataset.labels_df.iloc[:, 1].values  # Assuming labels are in the second column
-
-# # Compute class counts
-# class_sample_counts = np.array([np.sum(labels == i) for i in range(2)])
-# n_samples = sum(class_sample_counts)
-
-# # Compute class weights
-# class_weights = n_samples / (2 * class_sample_counts)
-# class_weights = torch.tensor(class_weights, dtype=torch.float32).to(device)
-
-# model = SimpleClassifier().to(device)
-# criterion = nn.CrossEntropyLoss() # weight=class_weights
-# #optimizer = optim.Adam(model.model.fc.parameters(), lr=0.001)  # Reduced learning rate for fine-tuning
-# optimizer = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=1e-4)
-
-# # Train the model
-# num_epochs = 40
-# model = train_model(model, train_dataloader, criterion, optimizer, device, num_epochs=num_epochs)
-# torch.save(model.state_dict(), 'trained_model_cell.pth')
-# score_train = predict_local(model, train_dataloader, calculate_custom_score, device)
-# print(score_train)
-
-
-
-# image_dir = "data/validation"
-# csv_file_path = "data/validation.csv"
-# val_dataset = LoadTifDataset(image_dir=image_dir, csv_file_path=csv_file_path, transform=val_transform)
-# val_dataloader = DataLoader(val_dataset, batch_size=8, shuffle=True)
-# score_val = predict_local(model, val_dataloader, calculate_custom_score, device)
-# print(score_val)
-
+if __name__ == "__main__":
+    main()
