@@ -2,13 +2,16 @@ import uvicorn
 from fastapi import FastAPI
 import datetime
 import time
-from utils import validate_reconstruction, encode_image, decode_request
-from model import predict
+from src.utils import validate_reconstruction, encode_image, decode_request
 from loguru import logger
 from pydantic import BaseModel
 
+from src.models.model import UNet
+import torch
+from src.predict_model import predict, apply_only_to_mask
+
 HOST = "0.0.0.0"
-PORT = 9050
+PORT = 9090
 
 # Images are loaded via cv2, encoded via base64 and sent as strings
 # See utils.py for details
@@ -47,8 +50,20 @@ def predict_endpoint(request: InpaintingPredictRequestDto):
 
     logger.info(f'Recieved images: {corrupted_image.shape}')
 
-    # Obtain reconstruction prediction
-    reconstructed_image = predict(corrupted_image,tissue_image,mask_image,vertebrae)
+
+    # Set the device (CPU or GPU)
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    # Initialize or load the trained model
+    model = UNet(in_channels=4, out_channels=1)  # Create an instance of the UNet model
+    model.load_state_dict(torch.load("models/ct_inpainting_unet_20240928_162225.pth", map_location=device))  # Load trained weights
+    model.to(device)
+
+    # Predict reconstruction using the model
+    reconstructed_image = predict(corrupted_image, tissue_image, mask_image, vertebrae, model)
+    
+    reconstructed_image = apply_only_to_mask(corrupted_image, tissue_image, mask_image, reconstructed_image)
+
 
     # Validate image format
     validate_reconstruction(reconstructed_image)

@@ -66,7 +66,7 @@ def load_sample(PATIENT_IX):
         "vertebrae":vertebrae,
     }
 
-def plot_prediction(corrupted_image,tissue_image,mask_image,reconstruction,vertebrae,ct=None):
+def plot_prediction(corrupted_image,tissue_image,mask_image,reconstruction,vertebrae,ct=None, name="inpainting_example.jpg"):
 
     if ct is None:
         ct = np.zeros_like(corrupted_image)
@@ -96,9 +96,11 @@ def plot_prediction(corrupted_image,tissue_image,mask_image,reconstruction,verte
     plt.title(f"Reconstruction")
 
     plt.subplot(1,6,5)
-    plt.imshow(ct,cmap="gray",vmin=0,vmax=255)
+    plt.imshow(ct,cmap="gray",vmin=0,vmax=255) # ct
     plt.axis("off")
     plt.title(f"CT")
+
+
 
     plt.subplot(1,6,6)
     plt.axis("off")
@@ -107,5 +109,5 @@ def plot_prediction(corrupted_image,tissue_image,mask_image,reconstruction,verte
     plt.title(f"Error")
 
     plt.tight_layout()
-    plt.savefig("inpainting_example.jpg")
+    plt.savefig(f"plots/{name}")
     plt.show()

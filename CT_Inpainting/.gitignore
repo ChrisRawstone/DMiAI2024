@@ -1,5 +1,9 @@
 docs/site/
 
+models
+plots
+wandb
+
 # test cache
 manual_test/
 

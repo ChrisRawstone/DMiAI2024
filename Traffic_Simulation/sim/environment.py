@@ -231,7 +231,6 @@ class TrafficSimulationEnvHandler():
 
         for group, color in next_groups.items():
             if not group in self.next_groups:
-                # Is this even possible to get here?
                 logic_errors.append(f"Invalid signal group {group} at time step {self.get_simulation_ticks()}")
                 continue
 
@@ -242,29 +241,27 @@ class TrafficSimulationEnvHandler():
                 green_lights.append(group)
 
         # Check the logic according to the green light combinations
-        for group, color in all_signals.items():
-            if color == "green":
-                # Check if we can allow this green light in combination with the other green light requests
-
-                for other_green_lights in green_lights:
-                    if group == other_green_lights:
-                        continue
-
-                    if not other_green_lights in self.allowed_green_signal_combinations[group]:
-                        green_lights.remove(group)
-                        logic_errors.append(f"Invalid green light combination at time step {self.get_simulation_ticks()}: {group} and {other_green_lights}. Removed {group} from green lights.")
-                        break
-
-
-        # Set the green lights in the next groups
         for group in green_lights:
-            self.next_groups[group] = 'green'
+            for other_green_light in green_lights:
+                if group == other_green_light:
+                    continue
+
+                if not other_green_light in self.allowed_green_signal_combinations[group]:
+                    green_lights.remove(group)
+                    logic_errors.append(
+                        f"Invalid green light combination at time step {self.get_simulation_ticks()}: {group} and {other_green_light}. Removed {group} from green lights.")
+                    break
+
+        # Set the next_groups with the validated colors
+        for group in self.next_groups:
+            self.next_groups[group] = all_signals[group]
 
         if len(logic_errors) == 0:
             return None
 
         logger.info(f"logic_errors: {logic_errors}")
         return ";".join(logic_errors)
+
                     
     def set_next_signals(self, next_groups):
 
@@ -272,13 +269,12 @@ class TrafficSimulationEnvHandler():
         
         return errors
 
-    def _update_group_states(self, next_groups):
+    def _update_group_states(self):
 
-        for group, color in next_groups.items():
-            if not group in self.group_states:
-                continue
+        for group in self.group_states:
+            desired_color = self.next_groups.get(group, 'red')
             current_color, time = self.group_states[group]
-            if color == current_color:
+            if desired_color == current_color:
                 self.group_states[group] = (current_color, time+1)
             elif current_color == 'redamber':
                 if time == self.red_amber_time:
@@ -290,15 +286,16 @@ class TrafficSimulationEnvHandler():
                     self.group_states[group] = ('red', 1)
                 else:
                     self.group_states[group] = ('amber', time+1)
-            elif color == 'red' and current_color == 'green':
+            elif desired_color == 'red' and current_color == 'green':
                 if time == self.min_green_time:
                     self.group_states[group] = ('amber', 1)
                 else:
                     self.group_states[group] = ('green', time+1)
-            elif color == 'green' and current_color == 'red':
+            elif desired_color == 'green' and current_color == 'red':
                 self.group_states[group] = ('redamber', 1)
             else:
-                raise Exception("Invalid state transition at tick {self.simulation_ticks}, {current_color} -> {color}")
+                raise Exception(f"Invalid state transition at tick {self.simulation_ticks}, {current_color} -> {desired_color}")
+
             
     def _color_to_letter(self, color):
         if color == 'red':
@@ -415,7 +412,8 @@ class TrafficSimulationEnvHandler():
                     if self._error_queue and signal_logic_errors:
                         self._error_queue.put(signal_logic_errors)
 
-                self._update_group_states(self.next_groups)
+                self._update_group_states()
+
             except Exception as e:
                 self.errors.append(e)
 
@@ -444,7 +442,7 @@ class TrafficSimulationEnvHandler():
         self._simulation_is_running = True
 
         logger.info('Traffic simulation - starting sumo....')
-        sumoBinary = checkBinary('sumo')
+        sumoBinary = checkBinary('sumo-gui')
 
         sim_instance = uuid4().hex
 
