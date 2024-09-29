@@ -2,7 +2,9 @@
 
 import numpy as np
 import cv2
-import base64 
+import base64
+from PIL import Image  # For saving images in specific formats
+import os
 
 def decode_image(encoded_img: str) -> np.ndarray:
     """
@@ -12,20 +14,47 @@ def decode_image(encoded_img: str) -> np.ndarray:
         encoded_img (str): Base64 encoded image string.
 
     Returns:
-        np.ndarray: Decoded image.
+        np.ndarray: Decoded image as a NumPy array.
     """
     try:
         # Decode the base64 string to bytes
         img_data = base64.b64decode(encoded_img)
-        # Convert bytes data to NumPy array
+        # Convert bytes data to a NumPy array
         np_arr = np.frombuffer(img_data, np.uint8)
         # Decode the image data using OpenCV
-        image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+        image = cv2.imdecode(np_arr, cv2.IMREAD_ANYDEPTH | cv2.IMREAD_COLOR)
         if image is None:
             raise ValueError("Image decoding resulted in None.")
         return image
     except Exception as e:
         raise ValueError(f"Failed to decode image: {e}")
+
+def save_image_as_tif(image: np.ndarray, output_path: str) -> None:
+    """
+    Saves the provided image as a .tif file in 'I;16B' format.
+
+    Args:
+        image (np.ndarray): Image to be saved.
+        output_path (str): File path where the image should be saved.
+
+    Raises:
+        ValueError: If the image is not a valid NumPy array.
+    """
+    if not isinstance(image, np.ndarray):
+        raise ValueError("Input image is not a valid NumPy array.")
+
+    # Convert to PIL Image
+    # Ensure image is in grayscale before conversion
+    if len(image.shape) == 3:
+        image_gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    else:
+        image_gray = image
+
+    # Convert NumPy array to PIL Image with mode 'I;16'
+    pil_image = Image.fromarray(image_gray.astype(np.uint16), mode='I;16')
+
+    # Save as .tif in 'I;16B' format
+    pil_image.save(output_path, format='TIFF')
 
 def load_sample(encoded_img: str) -> dict:
     """
@@ -41,3 +70,16 @@ def load_sample(encoded_img: str) -> dict:
     return {
         "image": image
     }
+
+# Example usage for saving images (not part of the utils module)
+if __name__ == "__main__":
+    encoded_image_str = "<YOUR BASE64 ENCODED STRING HERE>"
+    output_file_path = "output_image.tif"
+
+    # Load and decode the sample
+    sample = load_sample(encoded_image_str)
+    image = sample["image"]
+
+    # Save the decoded image as a .tif file
+    save_image_as_tif(image, output_file_path)
+    print(f"Image saved at {output_file_path}")

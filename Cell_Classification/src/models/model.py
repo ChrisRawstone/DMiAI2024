@@ -67,14 +67,4 @@ class ResNet50BinaryClassifier(nn.Module):
 MODEL_PATH = "resnet50_homogeneity_detection.pth"  # Ensure this path is correct
 model = ResNet50BinaryClassifier(MODEL_PATH)
 
-def predict(image: np.ndarray) -> int:
-    """
-    Wrapper function for model prediction.
 
-    Args:
-        image (np.ndarray): The input image as a NumPy array.
-
-    Returns:
-        int: 1 if homogenous, 0 otherwise.
-    """
-    return model.predict(image)

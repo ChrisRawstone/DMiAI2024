@@ -136,7 +136,7 @@ def main():
     criterion = FocalLoss(alpha=pos_weight_value, gamma=2, reduction='mean')
 
     # Define optimizer
-    optimizer = optim.SGD(model.parameters(), lr=learning_rate, momentum=0.4)
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-4)
 
     # Optionally, implement a learning rate scheduler
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=3, verbose=True)

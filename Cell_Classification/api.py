@@ -8,8 +8,9 @@ from src.models.model import predict
 from loguru import logger
 from pydantic import BaseModel
 from typing import List
-from src.utils import load_sample
+from src.utils import load_sample, save_image_as_tif
 import numpy as np
+import os
 
 HOST = "0.0.0.0"
 PORT = 9090
@@ -49,8 +50,13 @@ def predict_endpoint(request: CellClassificationPredictRequestDto):
         # Ensure the image is in the correct format 
         if not isinstance(image, np.ndarray):
             raise TypeError("Decoded image is not a NumPy array.")
+        
+        # Save the image as a 16-bit .tif file
+        save_path = os.path.join("data/saved_images", f"image_{int(time.time())}.tif")
+        save_image_as_tif(image, save_path)
+        logger.info(f"Image saved at {save_path}")
 
-        # Make prediction by passing the image array, not the dict
+        # Make prediction by passing the image array
         predicted_homogenous_state = predict(image)
         
         # Return the prediction
