@@ -12,8 +12,8 @@ from dtos import (
     TrafficSimulationPredictRequestDto, VehicleDto, SignalDto, LegDto, AllowedGreenSignalCombinationDto
 )
 
-sumo_version = 'sumo'
-sleep_time = 0
+sumo_version = 'sumo-gui'  # Use 'sumo' for headless mode
+sleep_time = 0.5
 print_every = 200
 
 def load_configuration(configuration_file, start_time, test_duration_seconds):
