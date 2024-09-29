@@ -4,11 +4,10 @@ import uvicorn
 from fastapi import FastAPI, HTTPException
 import datetime
 import time
-from src.models.model import predict
+from src.utils import predict, load_model, load_sample  # Updated import
 from loguru import logger
 from pydantic import BaseModel
 from typing import List
-from src.utils import load_sample
 import numpy as np
 
 HOST = "0.0.0.0"
@@ -50,9 +49,15 @@ def predict_endpoint(request: CellClassificationPredictRequestDto):
         if not isinstance(image, np.ndarray):
             raise TypeError("Decoded image is not a NumPy array.")
 
-        # Make prediction by passing the image array, not the dict
-        predicted_homogenous_state = predict(image)
-        
+        # Define model path
+        model_path = "models/svm_model.pkl"
+
+        # Load the trained model
+        model = load_model(model_path)
+
+        # Predict using the sample image
+        predicted_homogenous_state = predict(model, image)
+
         # Return the prediction
         response = CellClassificationPredictResponseDto(
             is_homogenous=predicted_homogenous_state
