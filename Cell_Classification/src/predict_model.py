@@ -32,8 +32,8 @@ def predict_local(model, data_loader, calculate_custom_score, device) -> int:
             correct_0 += ((predicted == 0) & (labels == 0)).sum().item()
             correct_1 += ((predicted == 1) & (labels == 1)).sum().item()
             
-            print(f'labels:{labels}')
-            print(f'predicted:{predicted}')
+            # print(f'labels:{labels}')
+            # print(f'predicted:{predicted}')
 
     # Calculate the custom score
     custom_score = calculate_custom_score(correct_0, correct_1, total_0, total_1)

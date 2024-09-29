@@ -1,4 +1,7 @@
 docs/site/
+*pth*
+checkpoints
+plots
 
 # test cache
 manual_test/
