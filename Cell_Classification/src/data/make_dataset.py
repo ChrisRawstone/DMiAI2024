@@ -1,13 +1,13 @@
+
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 from torchvision import transforms
 from PIL import Image, ImageOps
 from pathlib import Path
 import os
-import sys
 import pandas as pd
 import numpy as np
-from src.utils import tif_to_ndarray
+import random
 
 # Get the script's directory
 script_dir = Path(__file__).resolve()
@@ -102,3 +102,56 @@ val_transform = transforms.Compose([
 # # Create DataLoader objects
 # train_dataloader = DataLoader(train_dataset, batch_size=64, shuffle=True, num_workers=4)
 # val_dataloader = DataLoader(val_dataset, batch_size=64, shuffle=False, num_workers=4)
+
+
+
+class LoadTifDataset(Dataset):
+    def __init__(self, csv_file, image_dir, transform=None, augmentations=False):
+        self.image_dir = image_dir
+        self.labels_df = pd.read_csv(csv_file)
+        self.transform = transform
+        self.augmentations = augmentations
+        self.augmentation_factor = 4
+
+    def __len__(self):
+        # If augmentations are enabled, return augmented length
+        if self.augmentations:
+            return len(self.labels_df) * self.augmentation_factor
+        else:
+            return len(self.labels_df)
+
+    def __getitem__(self, idx):
+        # Get the image base name (xxx) from the CSV file and pad it to 3 digits
+        img_base_name = str(self.labels_df.iloc[idx, 0]).zfill(3)  
+        label = self.labels_df.iloc[idx, 1]  # Get the label (0 or 1)
+        
+        # Define the basic image path
+        img_path = os.path.join(self.image_dir, f"{img_base_name}.tif")
+        
+        # If augmentations are enabled, check for augmented versions of the image
+        if self.augmentations:
+            # Find all files with the pattern img_base_name_aug_0y.tif
+            aug_files = [f for f in os.listdir(self.image_dir) if f.startswith(f"{img_base_name}_aug_") and f.endswith('.tif')]
+            
+            # If augmented files exist, randomly choose one
+            if aug_files:
+                img_path = os.path.join(self.image_dir, random.choice(aug_files))
+        
+        # Load the image
+        image = Image.open(img_path)
+        
+        # Convert 16-bit images to 8-bit grayscale if necessary
+        if image.mode == 'I;16B':
+            image = (np.array(image) / 256).astype(np.uint8)  # Scale pixel values to 8-bit
+            image = Image.fromarray(image)  # Convert back to PIL Image
+            image = image.convert('L')  # Ensure it's in 8-bit grayscale
+        
+        # Ensure the image is in RGB mode for consistency with transformations
+        image = image.convert('RGB')
+        
+        # Apply any transformations if specified
+        if self.transform:
+            image = self.transform(image)
+        
+        # Return the image and the label
+        return image, torch.tensor(label, dtype=torch.long)

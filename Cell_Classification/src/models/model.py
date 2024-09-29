@@ -13,7 +13,7 @@ from torchvision import transforms, models
 class SimpleClassifier(nn.Module):
     def __init__(self):
         super(SimpleClassifier, self).__init__()
-        model = models.resnet18(weights=True)
+        model = models.resnet50(weights=True)
         for name, param in model.named_parameters():
             if 'fc' in name:
                 param.requires_grad = True
