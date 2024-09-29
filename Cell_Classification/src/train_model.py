@@ -85,19 +85,10 @@ train_dataloader = DataLoader(combined_train_dataset, batch_size=16, shuffle=Tru
 val_dataloader = DataLoader(val_dataset, batch_size=16, shuffle=False, num_workers=4)
 
 model = SimpleClassifier().to(device) 
-criterion = torch.nn.CrossEntropyLoss(label_smoothing=0.1)
-optimizer = torch.optim.AdamW(
-    filter(lambda p: p.requires_grad, model.parameters()), 
-    lr=1e-4, 
-    weight_decay=1e-5
-)
-scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=50, eta_min=1e-6)
-scheduler = torch.optim.lr_scheduler.CyclicLR(
-    optimizer, 
-    base_lr=1e-5, 
-    max_lr=1e-3, 
-    step_size_up=2000
-)
+criterion = torch.nn.CrossEntropyLoss()
+optimizer = torch.optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()), lr=1e-4)
+scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=10)
+
 num_epochs = 200
 model = train_model(model, train_dataloader, criterion, optimizer, scheduler, device, num_epochs=num_epochs)
 
