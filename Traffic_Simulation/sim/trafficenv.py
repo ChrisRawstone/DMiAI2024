@@ -25,6 +25,14 @@ class TrafficEnv(gym.Env):
         # Get the initial state from the simulation
         self.state = self.simulation.get_observable_state()
 
+        self.last_action_time = None
+        self.signal_minimum_times = {
+            'green': 6,        # Green light minimum duration (in seconds)
+            'yellow': 4,       # Yellow light minimum duration (in seconds)
+            'red_yellow': 2    # Red/yellow minimum duration (in seconds)
+        }
+        self.current_signal_state = 'red_yellow'  # Start with red/yellow
+
         if self.state is None:
             raise RuntimeError("[ERROR] Could not receive initial state from simulation.")
 
@@ -72,30 +80,39 @@ class TrafficEnv(gym.Env):
 
     def step(self, action):
         """Execute the given action and advance the simulation."""
-        current_tick = self.simulation_ticks
-        ticks_since_last_change = current_tick - self.last_change_tick
+        current_time = time()
 
-        if self.last_action is None:
+        # Enforce minimum signal state durations
+        if self.last_action_time is None:
+            self.last_action_time = current_time
+
+        elapsed_time = current_time - self.last_action_time
+
+        # Only allow the signal to change if the minimum duration has passed for the current state
+        if self.current_signal_state == 'green' and elapsed_time < self.signal_minimum_times['green']:
+            action = self.last_action  # Keep the same action if the minimum green time hasn't passed
+        elif self.current_signal_state == 'yellow' and elapsed_time < self.signal_minimum_times['yellow']:
+            action = self.last_action  # Keep the same action if the minimum yellow time hasn't passed
+        elif self.current_signal_state == 'red_yellow' and elapsed_time < self.signal_minimum_times['red_yellow']:
+            action = self.last_action  # Keep the same action if the minimum red/yellow time hasn't passed
+        else:
+            # Update the signal state and action only when the minimum time has passed
             self.last_action = action
+            self.last_action_time = current_time
+            self.current_signal_state = 'green' if self.current_signal_state == 'red_yellow' else 'yellow'
 
-        if ticks_since_last_change >= self.change_duration:
-            selected_combination = self.actions[action]
+        # Set signals to red initially
+        next_signals = {signal.name: 'red' for signal in self.state.signals}
 
-            # Set signals to red initially
-            next_signals = {signal.name: 'red' for signal in self.state.signals}
+        # Update signal state logic here based on the action and current signal state
+        selected_combination = self.actions[action]
+        for signal in selected_combination:
+            next_signals[signal] = 'green'
 
-            # Set the selected signal combination to green
-            for signal in selected_combination:
-                next_signals[signal] = 'green'
+        # Send the new signal states to the simulation
+        self.input_queue.put(next_signals)
 
-            # Send the new signal states to the simulation
-            self.simulation.set_next_signals(next_signals)
-
-            # Update current action and tick
-            self.last_action = action
-            self.last_change_tick = current_tick
-
-        # **Advance the SUMO simulation**
+        # Advance the simulation by one tick
         self.simulation._run_one_tick()
 
         # Get the next state after applying the action

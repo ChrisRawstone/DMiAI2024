@@ -13,7 +13,7 @@ from dtos import (
 )
 
 sumo_version = 'sumo-gui'  # Use 'sumo' for headless mode
-sleep_time = 0.5
+sleep_time = 0.05
 print_every = 200
 
 def load_configuration(configuration_file, start_time, test_duration_seconds):
