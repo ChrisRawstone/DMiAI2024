@@ -37,7 +37,7 @@ def create_tensor_data_set(path_to_folder,save_data_set=False):
     vertebrae_file_names = os.listdir(sub_directories_paths[4])
     vertebrae_file_names.sort(key=lambda x: int(x.split('_')[1].split('.')[0]))
                                       
-    for file_name in vertebrae_file_names:
+    for index,file_name in enumerate(vertebrae_file_names):
         assert file_name.endswith(".txt") # make sure it is a text file , mearning index 4 in the list
         # read from the file
         with open(os.path.join(sub_directories_paths[4], file_name), 'r') as f:
@@ -58,12 +58,12 @@ def create_tensor_data_set(path_to_folder,save_data_set=False):
                 img = transforms.ToTensor()(img)  # Directly convert the grayscale image to tensor        
 
                 if sub_directories_names[i] == 'ct':
-                    tensor_ground_truth[vertebrae_num, :, :] = img
+                    tensor_ground_truth[index, :, :] = img
                     # visualize the image
                     #plt.imshow(img, cmap='gray')
                     #plt.savefig(f'CT_Inpainting/plots/ground_truth.png')
                 else:
-                    tensor_data_set[vertebrae_num, i, :, :] = img 
+                    tensor_data_set[index, i, :, :] = img 
                     #plt.imshow(tensor_data_set[vertebrae_num, i, :, :], cmap='gray')
                     #plt.savefig(f'CT_Inpainting/plots/{i}.png')           
             
@@ -79,7 +79,7 @@ if __name__ == '__main__':
     
         fig, axs = plt.subplots(1, 3)
         for j, ax in enumerate(axs):
-            ax.imshow(tensor_data_set[i, j, :, :].numpy(), cmap='gray')
+            ax.imshow(tensor_data_set[0, j, :, :].numpy(), cmap='gray')
         plt.savefig(f'CT_Inpainting/data_sorted_by_vertebrae/{i}/sample_plot.png')
         plt.close()
 
