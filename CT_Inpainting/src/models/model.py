@@ -103,7 +103,11 @@ class VGG19Features(nn.Module):
 
 # Define the perceptual loss function
 class PerceptualLoss(nn.Module):
-    def __init__(self, layers=[2, 7, 12]):  # Example layers: conv1_2, conv2_2, conv3_3
+    def __init__(self, layers=[2, 7, 12, 21, 30]): # Some  defualt chosen layers
+        # available CONV layers_idx
+        available_conv_indices = [0, 2, 5, 7, 10, 12, 14, 16, 19, 21, 23, 25, 28, 30, 32, 34]
+        assert all([layer in available_conv_indices for layer in layers]), "Invalid layer index, it is not a convolutional layer"
+        
         super(PerceptualLoss, self).__init__()
         self.vgg_features = VGG19Features(layers).eval()
 

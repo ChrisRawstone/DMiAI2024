@@ -14,36 +14,66 @@ import numpy as np
 from src.models.model import UNet, VGG19Features, PerceptualLoss
 from data.data_set_classes import BaseClass
 import datetime
+from omegaconf import DictConfig, OmegaConf
+import hydra
 
-def main():
-    # set a seed for reproducibility
-    torch.manual_seed(0)
-    num_epochs = 100  # Adjust the number of epochs as needed
-    learning_rate=1e-4
-    batch_size = 4
-    api_key = "c187178e0437c71d461606e312d20dc9f1c6794f"
 
-    # use small dataset for testing
-    test_small_dataset = False
+@hydra.main(version_base=None, config_path="model_config", config_name="base_config")
+def train(cfg: DictConfig):
 
+    # Debug mode
+    debug = cfg.debug
+
+    # traing parameters
+    data_dir = cfg.training_params.data_dir
+    seed = cfg.training_params.seed
+    num_epochs = cfg.training_params.num_epochs
+    learning_rate = cfg.training_params.learning_rate
+    batch_size = cfg.training_params.batch_size
+    vgg_layers = cfg.training_params.vgg_layers
+    perceptual_loss_weight = cfg.training_params.perceptual_loss_weight
+
+    # Set the seed for reproducibility
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    # Initialize the model, loss function, and optimizer
+        # Set the device
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model = UNet().to(device)
+
+    assert cfg.training_params.loss_functions[0] == "l1", "First loss function must be L1"
+    base_criterion = nn.L1Loss()
+    if "perceptual" in cfg.training_params.loss_functions:
+        perceptual_loss_fn = PerceptualLoss(layers=vgg_layers).to(device)
+    # add more loss functions here if needed    
+    
+    #optimizer, we could experiment with different optimizers and add to config
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate)   
+
+    # get where hydra is storing everything, whis is specified in the config
+    hydra_cfg = hydra.core.hydra_config.HydraConfig.get()
+    output_dir = hydra_cfg['run']['dir']     
+
+    # wandb parameters
+    api_key = cfg.wandb.api_key
     wandb.login(key=api_key)
-
     # Initialize Weights and Biases
     wandb.init(
-        project="CT_Inpainting",  # Replace with your project name
+        project=cfg.wandb.project,
+        name = datetime.datetime.now().strftime("%Y%m%d_%H%M%S"),
         config={
             "learning_rate": learning_rate,
             "epochs": num_epochs,
-            "batch_size": 8,
+            "batch_size": batch_size,
             "architecture": "UNet",
             "dataset": "CT Inpainting",
+            
         }
     )
-
-    # Set the device
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-
+    # get where hydra is storing everything, whis is specified in the config
+    hydra_cfg = hydra.core.hydra_config.HydraConfig.get()
+    output_dir = hydra_cfg['run']['dir']
+    
     # Define the transformations
     transform = transforms.Compose([
         transforms.Resize((256, 256)),
@@ -51,35 +81,25 @@ def main():
     ])
 
     # Prepare the dataset and dataloaders
-    data_dir = 'CT_Inpainting/data'  # Adjust this path to your data directory
-
     dataset = BaseClass(data_dir=data_dir, transform=transform)
 
     # Split dataset into training and validation sets
-    train_size = int(0.8 * len(dataset))
+    train_size = int(cfg.training_params.train_size * len(dataset))
     val_size = len(dataset) - train_size
 
+    # set seed for reproducibility when splitting the dataset
+    torch.manual_seed(seed)    
     train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
 
-    # if true, use small dataset for testing
-    if test_small_dataset:
+    # if true, use small dataset for testing/debug
+    if debug:
         train_dataset = torch.utils.data.Subset(train_dataset, range(8))
         val_dataset = torch.utils.data.Subset(val_dataset, range(2))
 
-
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
-
-
-
-    # Initialize the model, loss function, and optimizer
-    model = UNet().to(device)
-    perceptual_loss_fn = PerceptualLoss(layers=[2, 7, 12]).to(device)  # VGG layers for perceptual loss   
-
-    criterion = nn.L1Loss()  # MAE
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False) 
+       
+    #timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     # Training loop with progress bars and W&B logging
     for epoch in range(num_epochs):
         print(f'Epoch {epoch+1}/{num_epochs}')
@@ -100,15 +120,17 @@ def main():
 
                 #calculate perceptual loss
 
-                l1_loss = criterion(outputs, labels)
-                # fix outputs such that it has 3 channels and can be used in perceptual loss
-                outputs_for_perceptual_loss = torch.cat([outputs, outputs, outputs], dim=1)
-                # same for labels
-                labels_for_perceptual_loss = torch.cat([labels, labels, labels], dim=1)
-
-                perceptual_loss = perceptual_loss_fn(outputs_for_perceptual_loss, labels_for_perceptual_loss)
-                # combine the two losses
-                total_loss = l1_loss + 0.1 * perceptual_loss
+                l1_loss = base_criterion(outputs, labels)
+                if "perceptual" in cfg.training_params.loss_functions:
+                    # fix outputs such that it has 3 channels and can be used in perceptual loss
+                    outputs_for_perceptual_loss = torch.cat([outputs, outputs, outputs], dim=1)
+                    # same for labels
+                    labels_for_perceptual_loss = torch.cat([labels, labels, labels], dim=1)                    
+                    perceptual_loss = perceptual_loss_fn(outputs_for_perceptual_loss, labels_for_perceptual_loss)
+                    # combine the two losses
+                    total_loss = l1_loss + perceptual_loss_weight * perceptual_loss
+                else:
+                    total_loss = l1_loss
 
                 total_loss.backward()
                 optimizer.step()
@@ -126,8 +148,9 @@ def main():
 
         # Log the training loss to W&B
         wandb.log({"epoch": epoch + 1, "total_train_loss": total_train_loss})
-        wandb.log({"epoch": epoch + 1, "MAE_train_loss": MAE_train_loss})    
-
+        if "perceptual" in cfg.training_params.loss_functions:
+            wandb.log({"epoch": epoch + 1, "perceptual_loss": perceptual_loss})
+       
         # Validation phase
         model.eval()
         val_loss = 0.0
@@ -143,7 +166,7 @@ def main():
                     outputs = model(inputs)
 
                     # Calculate loss
-                    loss = criterion(outputs, labels)
+                    loss = base_criterion(outputs, labels)
                     val_loss += loss.item() * inputs.size(0)
 
                     # Update progress bar for each batch
@@ -151,7 +174,7 @@ def main():
                     val_bar.update(1)
 
                     # Visualize the first few reconstructed images and ground truth
-                    if batch_idx == 1:  # Visualize the first batch only
+                    if batch_idx == 0:  # Visualize the first batch only
                         inputs_np = inputs[0, 0].cpu().numpy()  # Original corrupted image
                         mask_np = inputs[0, 1].cpu().numpy()  # Mask image
                         reconstructed_np = outputs[0, 0].cpu().numpy()  # Reconstructed image
@@ -178,8 +201,8 @@ def main():
                         # Save the figure
                         plt.tight_layout()
                         #plt.savefig(f'plots/epoch_{epoch+1}_reconstruction.png')
-                        plt.savefig(f'CT_Inpainting/plots/{timestamp}_epoch_{epoch+1}_reconstruction.png')
-                        plt.show()
+                        plt.savefig(f'{output_dir}/epoch_{epoch+1}_reconstruction.png')
+                        #plt.show()
 
                         # Convert matplotlib figure to a numpy array
                         fig.canvas.draw()
@@ -200,22 +223,22 @@ def main():
         print(f'Epoch {epoch+1}/{num_epochs} - Training Loss Total: {total_train_loss:.4f}, Validation Loss MAE: {val_loss:.4f}')
         # save the model every 5th epoch
         if (epoch+1) % 5 == 0:
-            torch.save(model.state_dict(), f'CT_Inpainting/models/ct_inpainting_unet_{timestamp}_epoch_{epoch+1}.pth')
+            torch.save(model.state_dict(), f'{output_dir}/epoch_{epoch+1}.pth')
 
     # Finish the W&B run
     wandb.finish()
 
-    if test_small_dataset:
+    if debug:
         #torch.save(model.state_dict(), 'models/shit_ct_inpainting_unet.pth')
-        torch.save(model.state_dict(), 'CT_Inpainting/models/shit_ct_inpainting_unet.pth')
+        torch.save(model.state_dict(), f'{output_dir}/debug.pth')
     else:
         # get time stamp
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        #timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
         # Save the trained model
         #torch.save(model.state_dict(), f'models/ct_inpainting_unet_{timestamp}.pth')
-        torch.save(model.state_dict(), f'CT_Inpainting/models/ct_inpainting_unet_{timestamp}.pth')
+        torch.save(model.state_dict(), f'{output_dir}/epoch_{epoch+1}.pth')
 
 
 if __name__ == "__main__":
-    main()
+    train()
