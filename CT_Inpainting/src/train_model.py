@@ -11,12 +11,14 @@ import wandb  # Import wandb for Weights and Biases integration
 from tqdm import tqdm  # Import tqdm for progress bars
 import matplotlib.pyplot as plt  # Import matplotlib for visualization
 import numpy as np
-from src.models.model import UNet
+from src.models.model import UNet, VGG19Features, PerceptualLoss
 from data.data_set_classes import BaseClass
 import datetime
 
 def main():
-    num_epochs = 10  # Adjust the number of epochs as needed
+    # set a seed for reproducibility
+    torch.manual_seed(0)
+    num_epochs = 100  # Adjust the number of epochs as needed
     learning_rate=1e-4
     batch_size = 4
     api_key = "c187178e0437c71d461606e312d20dc9f1c6794f"
@@ -37,9 +39,6 @@ def main():
             "dataset": "CT Inpainting",
         }
     )
-
-
-
 
     # Set the device
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -71,8 +70,12 @@ def main():
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 
+
+
     # Initialize the model, loss function, and optimizer
     model = UNet().to(device)
+    perceptual_loss_fn = PerceptualLoss(layers=[2, 7, 12]).to(device)  # VGG layers for perceptual loss   
+
     criterion = nn.L1Loss()  # MAE
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
@@ -83,7 +86,8 @@ def main():
         
         # Training phase
         model.train()
-        train_loss = 0.0
+        total_train_loss = 0.0
+        MAE_train_loss = 0.0
 
         # Use tqdm to add a progress bar to the training loop
         with tqdm(total=len(train_loader), desc="Training", unit="batch") as train_bar:
@@ -94,21 +98,35 @@ def main():
                 optimizer.zero_grad()
                 outputs = model(inputs)
 
-                loss = criterion(outputs, labels)
-                loss.backward()
+                #calculate perceptual loss
+
+                l1_loss = criterion(outputs, labels)
+                # fix outputs such that it has 3 channels and can be used in perceptual loss
+                outputs_for_perceptual_loss = torch.cat([outputs, outputs, outputs], dim=1)
+                # same for labels
+                labels_for_perceptual_loss = torch.cat([labels, labels, labels], dim=1)
+
+                perceptual_loss = perceptual_loss_fn(outputs_for_perceptual_loss, labels_for_perceptual_loss)
+                # combine the two losses
+                total_loss = l1_loss + 0.1 * perceptual_loss
+
+                total_loss.backward()
                 optimizer.step()
 
-                train_loss += loss.item() * inputs.size(0)
+                total_train_loss += total_loss.item() * inputs.size(0)
+                MAE_train_loss += l1_loss.item() * inputs.size(0)
 
                 # Update progress bar for each batch
-                train_bar.set_postfix(loss=loss.item())
+                train_bar.set_postfix(loss=total_loss.item())
                 train_bar.update(1)
 
         # Calculate average training loss
-        train_loss = train_loss / train_size
+        total_train_loss = total_train_loss / train_size
+        MAE_train_loss = MAE_train_loss / train_size
 
         # Log the training loss to W&B
-        wandb.log({"epoch": epoch + 1, "train_loss": train_loss})
+        wandb.log({"epoch": epoch + 1, "total_train_loss": total_train_loss})
+        wandb.log({"epoch": epoch + 1, "MAE_train_loss": MAE_train_loss})    
 
         # Validation phase
         model.eval()
@@ -179,7 +197,7 @@ def main():
         # Log the validation loss to W&B
         wandb.log({"epoch": epoch + 1, "val_loss": val_loss})
 
-        print(f'Epoch {epoch+1}/{num_epochs} - Training Loss: {train_loss:.4f}, Validation Loss: {val_loss:.4f}')
+        print(f'Epoch {epoch+1}/{num_epochs} - Training Loss Total: {total_train_loss:.4f}, Validation Loss MAE: {val_loss:.4f}')
         # save the model every 5th epoch
         if (epoch+1) % 5 == 0:
             torch.save(model.state_dict(), f'CT_Inpainting/models/ct_inpainting_unet_{timestamp}_epoch_{epoch+1}.pth')

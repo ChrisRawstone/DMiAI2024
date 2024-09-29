@@ -1,5 +1,6 @@
 import torch.nn as nn
 import torch
+import torchvision.models
 
 # Define the U-Net model
 class UNet(nn.Module):
@@ -81,3 +82,35 @@ class UNet(nn.Module):
 
         out = self.final_conv(dec0)
         return out
+    
+# Load pre-trained VGG-19 model for perceptual loss
+class VGG19Features(nn.Module):
+    def __init__(self, layers):
+        super(VGG19Features, self).__init__()
+        vgg19 = torchvision.models.vgg19(pretrained=True).features
+        self.layers = layers
+        self.vgg_layers = nn.Sequential(*list(vgg19[:max(layers)+1]))
+        for param in self.vgg_layers.parameters():
+            param.requires_grad = False  # Freeze VGG weights
+
+    def forward(self, x):
+        features = []
+        for i, layer in enumerate(self.vgg_layers):
+            x = layer(x)
+            if i in self.layers:
+                features.append(x)
+        return features
+
+# Define the perceptual loss function
+class PerceptualLoss(nn.Module):
+    def __init__(self, layers=[2, 7, 12]):  # Example layers: conv1_2, conv2_2, conv3_3
+        super(PerceptualLoss, self).__init__()
+        self.vgg_features = VGG19Features(layers).eval()
+
+    def forward(self, pred, target):
+        pred_features = self.vgg_features(pred)
+        target_features = self.vgg_features(target)
+        loss = 0.0
+        for pf, tf in zip(pred_features, target_features):
+            loss += torch.nn.functional.mse_loss(pf, tf)  # Perceptual loss (MSE between features)
+        return loss
