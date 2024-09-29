@@ -39,4 +39,4 @@
 module load cuda/11.1
 source CT_Inpainting/CT_venv/bin/activate
 
-python CT_Inpainting/src/train_model_christoffer.py
+python CT_Inpainting/src/train_model.py training_params.perceptual_loss_weight=0.05

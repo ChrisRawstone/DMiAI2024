@@ -4,7 +4,7 @@
 #BSUB -q gpuv100
 
 ### name of job, output file and err
-#BSUB -J CT-inpainting_christian
+#BSUB -J CT-inpainting
 #BSUB -o inpainting_%J.out
 #BSUB -e inpainting_%J.err
 

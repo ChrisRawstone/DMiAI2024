@@ -11,7 +11,7 @@ training_params:
   batch_size: 4
   data_dir: 'CT_Inpainting/data'
   train_size: 0.8
-  loss_functions: ['l1'] # you can add perceptual
+  loss_functions: ['l1', 'perceptual'] # you can remove 'perceptual' if you don't want to use it
   perceptual_loss_weight: 0.1
   vgg_layers: [0, 5, 10, 19, 28]
 
