@@ -80,12 +80,31 @@ def train_model(model, train_dataloader, criterion, optimizer, device, num_epoch
     return model
 
 final_resize_size = (224, 224)
+# train_transform = transforms.Compose([
+#     transforms.Grayscale(num_output_channels=3), 
+#     transforms.Resize(final_resize_size),  # Resize the shorter side first
+#     transforms.ToTensor(),
+#     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),  # ImageNet normalization
+# ])
+
 train_transform = transforms.Compose([
-    transforms.Grayscale(num_output_channels=3), 
+    transforms.Grayscale(num_output_channels=3),  # Convert to 3 channels
     transforms.Resize(final_resize_size),  # Resize the shorter side first
+
+    # Data Augmentation
+    transforms.RandomHorizontalFlip(p=0.5),  # Flip image horizontally with a 50% probability
+    transforms.RandomVerticalFlip(p=0.5),    # Flip image vertically with a 50% probability
+    transforms.RandomRotation(degrees=15),   # Rotate image by a random angle up to 15 degrees
+    transforms.RandomResizedCrop(final_resize_size, scale=(0.8, 1.0)),  # Randomly crop and resize
+
+    # Color jitter for brightness/contrast adjustments (useful for microscopy images)
+    transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
+    
+    # Convert to tensor and normalize
     transforms.ToTensor(),
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),  # ImageNet normalization
 ])
+
 
 val_transform = transforms.Compose([
     transforms.Grayscale(num_output_channels=3),  
@@ -99,7 +118,7 @@ csv_file = "data/training.csv"
 
 # Create datasets
 train_dataset = LoadTifDataset(csv_file=csv_file, image_dir=image_dir, transform=val_transform)
-train_dataloader = DataLoader(train_dataset, batch_size=16, shuffle=True)
+train_dataloader = DataLoader(train_dataset, batch_size=8, shuffle=True)
 
 # Get the labels from the dataset
 labels = train_dataset.labels_df.iloc[:, 1].values  # Assuming labels are in the second column
@@ -114,11 +133,11 @@ class_weights = torch.tensor(class_weights, dtype=torch.float32).to(device)
 
 model = SimpleClassifier().to(device)
 criterion = nn.CrossEntropyLoss(weight=class_weights) # weight=class_weights
-optimizer = optim.Adam(model.model.fc.parameters(), lr=0.001)  # Reduced learning rate for fine-tuning
+optimizer = optim.Adam(model.model.fc.parameters(), lr=0.0001)  # Reduced learning rate for fine-tuning
 #optimizer = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=1e-4)
 
 # Train the model
-num_epochs = 40
+num_epochs = 100
 model = train_model(model, train_dataloader, criterion, optimizer, device, num_epochs=num_epochs)
 torch.save(model.state_dict(), 'trained_model_cell.pth')
 score_train = predict_local(model, train_dataloader, calculate_custom_score, device)
@@ -127,7 +146,7 @@ print(score_train)
 
 image_dir = "data/validation"
 csv_file_path = "data/validation.csv"
-val_dataset = LoadTifDataset(image_dir=image_dir, csv_file_path=csv_file_path, transform=val_transform)
+val_dataset = LoadTifDataset(csv_file=csv_file_path, image_dir=image_dir,transform=val_transform)
 val_dataloader = DataLoader(val_dataset, batch_size=8, shuffle=True)
 score_val = predict_local(model, val_dataloader, calculate_custom_score, device)
 print(score_val)
