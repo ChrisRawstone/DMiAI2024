@@ -15,19 +15,8 @@ from src.models.model import UNet
 from data.data_set_classes import BaseClass
 import datetime
 
-
-
-
-
-
-
-
-
-
-
-
 def main():
-    num_epochs = 500  # Adjust the number of epochs as needed
+    num_epochs = 10  # Adjust the number of epochs as needed
     learning_rate=1e-4
     batch_size = 4
     api_key = "c187178e0437c71d461606e312d20dc9f1c6794f"
@@ -65,7 +54,7 @@ def main():
     # Prepare the dataset and dataloaders
     data_dir = 'CT_Inpainting/data'  # Adjust this path to your data directory
 
-    dataset = CTInpaintingDataset(data_dir=data_dir, transform=transform)
+    dataset = BaseClass(data_dir=data_dir, transform=transform)
 
     # Split dataset into training and validation sets
     train_size = int(0.8 * len(dataset))
@@ -208,8 +197,6 @@ def main():
         # Save the trained model
         #torch.save(model.state_dict(), f'models/ct_inpainting_unet_{timestamp}.pth')
         torch.save(model.state_dict(), f'CT_Inpainting/models/ct_inpainting_unet_{timestamp}.pth')
-
-
 
 
 if __name__ == "__main__":

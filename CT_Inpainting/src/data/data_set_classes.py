@@ -17,8 +17,11 @@ import datetime
 #base class for both classifier and inpainting
 class BaseClass(Dataset):
     def __init__(self, data_dir, transform=None, dirs= ['corrupted', 'mask', 'tissue', 'vertebrae', 'ct'], desired_input = ['corrupted', 'mask', 'tissue', 'vertebrae'], desired_output = ['ct']):
+        if transform is None:
+            assert False, "Transform is required"
         self.data_dir = data_dir
-        for dir in dirs:
+        self.dirs = dirs
+        for dir in self.dirs:
             setattr(self, dir + '_dir', os.path.join(data_dir, dir))
 
         self.desired_input = desired_input
@@ -32,11 +35,11 @@ class BaseClass(Dataset):
         return [filename.split('_')[1] + "_" + filename.split('_')[2].split('.')[0] for filename in filenames]     
 
     def __len__(self):
-        return len(self.filenames)
+        return len(self.identifers)
     
     def __getitem__(self, idx):
         # Get the filename
-        filename = self.filenames[idx]
+        filename = self.identifers[idx]  # e.g., '000_1'
         # Construct file paths
         path_to_files = {f"{dir}_path": os.path.join(getattr(self, dir + '_dir'), dir + '_' + filename + '.png') for dir in self.dirs}
         # change vertebrate path to .txt
@@ -45,18 +48,18 @@ class BaseClass(Dataset):
             path_to_files['vertebrae_path'] = path_to_files['vertebrae_path'].replace('.png', '.txt')
        
         # Load images   
-        images = {dir: Image.open(path).convert('L') for dir, path in path_to_files.items() if dir != 'vertebrae_path'}
-        tensors = images.copy()
+        images = {dir.split("_")[0]: Image.open(path).convert('L') for dir, path in path_to_files.items() if dir != 'vertebrae_path'}
+        tensors = {key: self.transform(image) for key, image in images.items()}
         if 'vertebrae' in self.dirs:
             with open(path_to_files['vertebrae_path'], 'r') as f:
                 vertebrae_num = int(f.read().strip())
             # Normalize the vertebrae number to [0,1], we have 25 vertebrae
             vertebrae_normalized = vertebrae_num / 25
-            tensors['vertebrae'] = torch.full((1, images['corrupted'].shape[1], images['corrupted'].shape[0]), vertebrae_normalized)
+            # get random image from tensor dict as we assume all images have the same shape
+            random_key = list(tensors.keys())[0]
+            tensors['vertebrae'] = torch.full((1, tensors[random_key].shape[1], tensors[random_key].shape[2]), vertebrae_normalized)
         
-        if self.transform:
-            for key in tensors.keys():
-                tensors[key] = self.transform(tensors[key])
+       
         else:
             assert False, "Transform is required"
 
