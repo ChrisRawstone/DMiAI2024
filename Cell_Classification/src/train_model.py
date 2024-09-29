@@ -9,7 +9,7 @@ from datetime import datetime
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
 from torchvision import transforms, models
 
 import albumentations as A
@@ -26,8 +26,8 @@ import logging
 # 1. Setup and Configuration
 # ===============================
 
-# Set random seeds for reproducibility
 def set_seed(seed=42):
+    """Set random seeds for reproducibility."""
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -38,7 +38,7 @@ set_seed(42)
 # Define device
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-# Create directories
+# Create necessary directories
 os.makedirs('plots', exist_ok=True)
 os.makedirs('checkpoints', exist_ok=True)
 os.makedirs('logs', exist_ok=True)
@@ -64,28 +64,26 @@ def calculate_custom_score(y_true, y_pred):
     Calculates the custom score based on the formula:
     Score = (a0 * a1) / (n0 * n1)
     
-    Args:
-        y_true (list or np.ndarray): True labels.
-        y_pred (list or np.ndarray): Predicted labels.
-    
-    Returns:
-        float: The calculated score.
+    Where:
+    - a0: True Negatives (correctly predicted as 0)
+    - a1: True Positives (correctly predicted as 1)
+    - n0: Total actual class 0 samples
+    - n1: Total actual class 1 samples
     """
-    # Convert inputs to NumPy arrays for easier manipulation
     y_true = np.array(y_true)
     y_pred = np.array(y_pred)
     
-    # True Negatives (a0): Correctly predicted as 0
+    # True Negatives (a0)
     a0 = np.sum((y_true == 0) & (y_pred == 0))
     
-    # True Positives (a1): Correctly predicted as 1
+    # True Positives (a1)
     a1 = np.sum((y_true == 1) & (y_pred == 1))
     
     # Total actual class 0 and class 1
     n0 = np.sum(y_true == 0)
     n1 = np.sum(y_true == 1)
     
-    # To avoid division by zero
+    # Avoid division by zero
     if n0 == 0 or n1 == 0:
         logging.warning("One of the classes has zero samples. Returning score as 0.")
         return 0.0
@@ -138,6 +136,14 @@ def load_sample(encoded_img: str) -> dict:
 
 class CustomDataset(Dataset):
     def __init__(self, df, image_dir, transform=None):
+        """
+        Initializes the dataset with a DataFrame, image directory, and transformations.
+
+        Args:
+            df (pd.DataFrame): DataFrame containing 'image_id' and 'is_homogenous'.
+            image_dir (str): Directory where images are stored.
+            transform (albumentations.Compose, optional): Transformations to apply.
+        """
         self.df = df.reset_index(drop=True)
         self.image_dir = image_dir
         self.transform = transform
@@ -146,6 +152,15 @@ class CustomDataset(Dataset):
         return len(self.df)
 
     def __getitem__(self, idx):
+        """
+        Retrieves an image and its label by index.
+
+        Args:
+            idx (int): Index of the sample.
+
+        Returns:
+            tuple: (image tensor, label)
+        """
         image_id = str(self.df.iloc[idx]['image_id']).zfill(3)
         label = int(self.df.iloc[idx]['is_homogenous'])
         image_path = os.path.join(self.image_dir, f'{image_id}.tif')
@@ -174,8 +189,7 @@ class CustomDataset(Dataset):
         image = decode_image(encoded_img)
 
         # Convert grayscale to RGB by duplicating channels
-        if len(image.shape) == 2 or image.shape[2] == 1:
-            image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
+        image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
 
         if self.transform:
             augmented = self.transform(image=image)
@@ -195,13 +209,17 @@ train_transform = A.Compose([
     A.VerticalFlip(p=0.5),
     A.Rotate(limit=30, p=0.5),
     A.RandomBrightnessContrast(p=0.5),
-    A.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)),  # Updated for 3 channels
+    A.RandomGamma(p=0.5),
+    A.GaussianBlur(blur_limit=3, p=0.3),
+    A.Normalize(mean=(0.485, 0.456, 0.406),  # Using ImageNet means
+                std=(0.229, 0.224, 0.225)),   # Using ImageNet stds
     ToTensorV2(),
 ])
 
 val_transform = A.Compose([
     A.Resize(224, 224),
-    A.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)),  # Updated for 3 channels
+    A.Normalize(mean=(0.485, 0.456, 0.406),  # Using ImageNet means
+                std=(0.229, 0.224, 0.225)),   # Using ImageNet stds
     ToTensorV2(),
 ])
 
@@ -216,16 +234,29 @@ logging.info(f"Training samples: {len(train_df)}")
 logging.info(f"Validation samples: {len(val_df)}")
 
 # ===============================
-# 7. Create Datasets and DataLoaders
+# 7. Create Datasets and DataLoaders with Weighted Sampling
 # ===============================
 
 train_dataset = CustomDataset(train_df, 'data/training8bit', transform=train_transform)
 val_dataset = CustomDataset(val_df, 'data/validation', transform=val_transform)
 
+# Calculate class weights for WeightedRandomSampler
+class_counts = train_df['is_homogenous'].value_counts().to_dict()
+total_samples = len(train_df)
+weights = [1.0] * len(train_df)
+
+for idx, label in enumerate(train_df['is_homogenous']):
+    if label == 0:
+        weights[idx] = total_samples / (2 * class_counts.get(0, 1))
+    else:
+        weights[idx] = total_samples / (2 * class_counts.get(1, 1))
+
+sampler = WeightedRandomSampler(weights, num_samples=len(train_df), replacement=True)
+
 train_loader = DataLoader(
     train_dataset,
     batch_size=64,
-    shuffle=True,
+    sampler=sampler,  # Use sampler for weighted sampling
     num_workers=8,
     pin_memory=True
 )
@@ -243,11 +274,20 @@ val_loader = DataLoader(
 # ===============================
 
 def save_sample_images(dataset, num_samples=5, folder='plots', split='train'):
+    """
+    Saves a few sample images from the dataset to verify correctness.
+
+    Args:
+        dataset (CustomDataset): The dataset to sample from.
+        num_samples (int, optional): Number of samples to save. Defaults to 5.
+        folder (str, optional): Directory to save images. Defaults to 'plots'.
+        split (str, optional): Dataset split name ('train' or 'val'). Defaults to 'train'.
+    """
     os.makedirs(folder, exist_ok=True)
     for i in range(num_samples):
         image, label = dataset[i]
         image_np = image.permute(1, 2, 0).cpu().numpy()
-        image_np = (image_np * 0.5) + 0.5  # Unnormalize
+        image_np = (image_np * np.array([0.229, 0.224, 0.225])) + np.array([0.485, 0.456, 0.406])  # Unnormalize
         image_np = np.clip(image_np, 0, 1)
         plt.imshow(image_np)
         plt.title(f'{split.capitalize()} Label: {label}')
@@ -255,8 +295,8 @@ def save_sample_images(dataset, num_samples=5, folder='plots', split='train'):
         plt.savefig(f'{folder}/{split}_sample_{i}.png')
         plt.close()
 
-save_sample_images(train_dataset, split='train')
-save_sample_images(val_dataset, split='val')
+# save_sample_images(train_dataset, split='train')
+# save_sample_images(val_dataset, split='val')
 
 logging.info("Sample images saved to 'plots' folder.")
 
@@ -265,6 +305,15 @@ logging.info("Sample images saved to 'plots' folder.")
 # ===============================
 
 def get_model(pretrained=True):
+    """
+    Initializes the EfficientNet_B4 model for binary classification.
+
+    Args:
+        pretrained (bool, optional): Whether to use ImageNet pretrained weights. Defaults to True.
+
+    Returns:
+        nn.Module: The modified EfficientNet_B4 model.
+    """
     model = models.efficientnet_b4(pretrained=pretrained)
     num_ftrs = model.classifier[1].in_features
     model.classifier[1] = nn.Linear(num_ftrs, 1)  # Binary classification
@@ -279,6 +328,15 @@ model = model.to(device)
 
 class FocalLoss(nn.Module):
     def __init__(self, alpha=0.25, gamma=2, logits=True, reduce=True):
+        """
+        Initializes the Focal Loss function.
+
+        Args:
+            alpha (float, optional): Weighting factor for the rare class. Defaults to 0.25.
+            gamma (float, optional): Focusing parameter for modulating factor (1-p). Defaults to 2.
+            logits (bool, optional): Whether inputs are logits. Defaults to True.
+            reduce (bool, optional): Whether to reduce the loss. Defaults to True.
+        """
         super(FocalLoss, self).__init__()
         self.alpha = alpha
         self.gamma = gamma
@@ -286,6 +344,16 @@ class FocalLoss(nn.Module):
         self.reduce = reduce
 
     def forward(self, inputs, targets):
+        """
+        Forward pass for Focal Loss.
+
+        Args:
+            inputs (torch.Tensor): Predicted logits.
+            targets (torch.Tensor): Ground truth labels.
+
+        Returns:
+            torch.Tensor: Computed Focal Loss.
+        """
         targets = targets.type_as(inputs)
         if self.logits:
             BCE_loss = nn.functional.binary_cross_entropy_with_logits(inputs, targets, reduction='none')
@@ -299,22 +367,18 @@ class FocalLoss(nn.Module):
         else:
             return F_loss
 
-# Calculate class weights if there's imbalance
+# Calculate class weights
 class_counts = train_df['is_homogenous'].value_counts().to_dict()
 total = sum(class_counts.values())
-class_weights = {
-    0: total / class_counts[0],
-    1: total / class_counts[1]
-}
-alpha = class_weights[1] / (class_weights[0] + class_weights[1])
-
+# Compute alpha for the minority class
+alpha = class_counts.get(1, 1) / total  # Assuming 1 is the minority class
 criterion = FocalLoss(alpha=alpha, gamma=2, logits=True).to(device)
 
 # ===============================
 # 11. Optimizer and Scheduler
 # ===============================
 
-optimizer = optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-5)
+optimizer = optim.AdamW(model.parameters(), lr=1e-5, weight_decay=1e-5)
 
 scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=10)
 
@@ -329,8 +393,7 @@ scaler = torch.cuda.amp.GradScaler()
 # ===============================
 
 num_epochs = 50
-best_val_acc = 0
-best_custom_score = 0  # Initialize best custom score
+best_custom_score = 0
 early_stopping_patience = 10
 patience_counter = 0
 
@@ -348,7 +411,7 @@ for epoch in range(num_epochs):
 
         optimizer.zero_grad()
 
-        with torch.cuda.amp.autocast():
+        with torch.amp.autocast("cuda"):
             outputs = model(images)
             loss = criterion(outputs, labels)
 
@@ -365,15 +428,16 @@ for epoch in range(num_epochs):
         progress_bar.set_postfix({'Loss': loss.item()})
 
     avg_train_loss = train_loss / len(train_dataset)
-    train_auc = roc_auc_score(train_targets, train_preds)
+    try:
+        train_auc = roc_auc_score(train_targets, train_preds)
+    except ValueError:
+        train_auc = 0.0  # Handle cases where AUC cannot be computed
 
     # Validation
     model.eval()
     val_loss = 0
     val_preds = []
     val_targets = []
-    correct = 0
-    total = 0
 
     with torch.no_grad():
         progress_bar = tqdm(val_loader, desc='Validation', leave=False)
@@ -381,7 +445,7 @@ for epoch in range(num_epochs):
             images = images.to(device, non_blocking=True)
             labels = labels.float().unsqueeze(1).to(device, non_blocking=True)
 
-            with torch.cuda.amp.autocast():
+            with torch.amp.autocast("cuda"):
                 outputs = model(images)
                 loss = criterion(outputs, labels)
 
@@ -392,7 +456,10 @@ for epoch in range(num_epochs):
             val_targets.extend(labels.detach().cpu().numpy())
 
     avg_val_loss = val_loss / len(val_dataset)
-    val_auc = roc_auc_score(val_targets, val_preds)
+    try:
+        val_auc = roc_auc_score(val_targets, val_preds)
+    except ValueError:
+        val_auc = 0.0  # Handle cases where AUC cannot be computed
 
     # Calculate accuracy
     preds_binary = (np.array(val_preds) > 0.5).astype(int)
@@ -450,7 +517,10 @@ with torch.no_grad():
         val_targets.extend(labels.detach().cpu().numpy())
 
 avg_val_loss = val_loss / len(val_dataset)
-val_auc = roc_auc_score(val_targets, val_preds)
+try:
+    val_auc = roc_auc_score(val_targets, val_preds)
+except ValueError:
+    val_auc = 0.0  # Handle cases where AUC cannot be computed
 
 # Calculate accuracy
 preds_binary = (np.array(val_preds) > 0.5).astype(int)
