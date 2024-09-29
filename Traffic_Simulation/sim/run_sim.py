@@ -6,23 +6,6 @@ from environment import load_and_run_simulation
 import pprint
 import inspect
 
-def print_all_variables_and_attributes(variables):
-    for var_name, var_value in variables.items():
-        print(f"\nVariable: {var_name} ({type(var_value).__name__})")
-        
-        # Check if it's a built-in type or user-defined object
-        if isinstance(var_value, (int, float, str, list, dict, tuple, bool)):
-            pprint.pprint(var_value)
-        elif hasattr(var_value, '__dict__'):
-            # Print attributes of user-defined objects
-            pprint.pprint(vars(var_value))
-        else:
-            print("Attributes:")
-            attributes = dir(var_value)
-            for attr in attributes:
-                if not attr.startswith('__') and not inspect.ismethod(getattr(var_value, attr)):
-                    print(f"  {attr} = {getattr(var_value, attr)}")
-
 def run_game():
 
     test_duration_seconds = 600
@@ -65,9 +48,6 @@ def run_game():
         # Insert your own logic here to parse the state and 
         # select the next action to take
 
-        # print(f'Vehicles: {state.vehicles}')
-        # print(f'Signals: {state.signals}')
-
         signal_logic_errors = None
         prediction = {}
         prediction["signals"] = []
@@ -98,8 +78,6 @@ def run_game():
 
         if signal_logic_errors:
             errors.append(signal_logic_errors)
-
-
 
     # End of simulation, return the score
 
