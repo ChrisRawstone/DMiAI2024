@@ -10,26 +10,70 @@ from torchvision import transforms, models
 # model = models.vgg16(pretrained=True)
 # model = models.mobilenet_v2(pretrained=True)
 
+# class SimpleClassifier(nn.Module):
+#     def __init__(self):
+#         super(SimpleClassifier, self).__init__()
+#         model = models.resnet50(weights=True)
+#         # Unfreeze the last few layers
+#         for name, param in model.named_parameters():
+#             if 'layer4' in name or 'fc' in name:
+#                 param.requires_grad = True
+#             else:
+#                 param.requires_grad = False
+
+        
+#         # Replace the fully connected layer (classifier)
+#         num_ftrs = model.fc.in_features
+#         model.fc = nn.Linear(num_ftrs, 2)  # 2 classes in your binary classification task
+
+#         # Set the device to GPU if available
+#         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+#         self.model = model.to(device)
+        
+#     def forward(self, x):
+#         return self.model(x)
+
 class SimpleClassifier(nn.Module):
     def __init__(self):
         super(SimpleClassifier, self).__init__()
-        model = models.resnet50(weights=True)
+        model = models.efficientnet_b4(weights='DEFAULT')
+        # Unfreeze certain layers
         for name, param in model.named_parameters():
-            if 'fc' in name:
+            if 'features.8' in name or 'classifier' in name:
                 param.requires_grad = True
             else:
                 param.requires_grad = False
         
-        # Replace the fully connected layer (classifier)
-        num_ftrs = model.fc.in_features
-        model.fc = nn.Linear(num_ftrs, 2)  # 2 classes in your binary classification task
-
-        # Set the device to GPU if available
+        # Modify the classifier
+        num_ftrs = model.classifier[1].in_features
+        model.classifier[1] = nn.Linear(num_ftrs, 2)
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = model.to(device)
         
     def forward(self, x):
         return self.model(x)
+
+# class SimpleClassifier(nn.Module):
+#     def __init__(self):
+#         super(SimpleClassifier, self).__init__()
+#         model = models.efficientnet_b4(weights='DEFAULT')
+#         for name, param in model.named_parameters():
+#             if 'features.8' in name or 'classifier' in name:
+#                 param.requires_grad = True
+#             else:
+#                 param.requires_grad = False
+        
+#         num_ftrs = model.classifier[1].in_features
+#         model.classifier = nn.Sequential(
+#             nn.Dropout(p=0.5),
+#             nn.Linear(num_ftrs, 2)
+#         )
+#         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+#         self.model = model.to(device)
+        
+#     def forward(self, x):
+#         return self.model(x)
+
 
 
 # Define the Autoencoder architecture
