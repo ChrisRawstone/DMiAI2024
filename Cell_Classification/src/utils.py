@@ -94,17 +94,32 @@ def preprocess_image(image: np.ndarray) -> np.ndarray:
 
     return hog_features.reshape(1, -1)  # Reshape to match the input format expected by the model
 
-def predict(model, image: np.ndarray) -> int:
+
+
+
+def save_image_as_tif(image: np.ndarray, output_path: str) -> None:
     """
-    Predict the class of the given image using the provided model.
+    Saves the provided image as a .tif file in 'I;16B' format.
 
     Args:
-        model: The trained model for prediction.
-        image (np.ndarray): The input image as a NumPy array.
+        image (np.ndarray): Image to be saved.
+        output_path (str): File path where the image should be saved.
 
-    Returns:
-        int: 1 if homogenous, 0 otherwise.
+    Raises:
+        ValueError: If the image is not a valid NumPy array.
     """
-    features = preprocess_image(image)
-    prediction = model.predict(features)
-    return int(prediction[0])
+    if not isinstance(image, np.ndarray):
+        raise ValueError("Input image is not a valid NumPy array.")
+
+    # Convert to PIL Image
+    # Ensure image is in grayscale before conversion
+    if len(image.shape) == 3:
+        image_gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    else:
+        image_gray = image
+
+    # Convert NumPy array to PIL Image with mode 'I;16'
+    pil_image = Image.fromarray(image_gray.astype(np.uint16), mode='I;16')
+
+    # Save as .tif in 'I;16B' format
+    pil_image.save(output_path, format='TIFF')

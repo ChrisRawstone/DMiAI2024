@@ -3,9 +3,11 @@
 import os
 import pandas as pd
 import numpy as np
-from src.utils import load_model, predict, load_sample  # Import necessary functions from utils
+from src.utils import load_model, load_sample  # Import necessary functions from utils
+from src.predict import predict
 import base64
 from sklearn.metrics import precision_score, recall_score, f1_score
+import joblib
 
 # Define paths
 model_path = "models/svm_model.pkl"  # Path to the saved model
@@ -41,6 +43,11 @@ a_0, a_1 = 0, 0  # Correctly predicted samples for each class
 true_labels = []
 predicted_labels = []
 
+# Load the trained model
+model_path = "models/svm_model.pkl"  # Path to the saved model
+model = joblib.load(model_path)
+print(f"Model loaded from {model_path}")
+
 # Check if the validation directory exists
 if os.path.exists(validation_dir):
     # Iterate through each image file listed in the validation CSV
@@ -60,7 +67,7 @@ if os.path.exists(validation_dir):
                 image = sample["image"]
 
                 # Predict using the loaded model
-                prediction = predict(model, image)
+                prediction = predict(image)
 
                 # Append to the lists for metrics calculation
                 true_labels.append(true_label)

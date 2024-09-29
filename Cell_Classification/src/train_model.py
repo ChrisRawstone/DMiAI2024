@@ -1,98 +1,174 @@
-# train_model.py
-
-# Import necessary libraries
 import os
-import pandas as pd
+import cv2
+import base64
 import numpy as np
-from utils import load_sample  # Import load_sample from utils
-import base64  # <-- Add this import
-from sklearn.model_selection import train_test_split
-from sklearn.svm import SVC
-from sklearn.metrics import classification_report, accuracy_score
-import joblib
+import pandas as pd
 import matplotlib.pyplot as plt
 
-# Define paths to your training CSV and image folder
-csv_file_path = "data/training.csv"  # Change this to your training CSV file path
-image_folder_path = "data/training/"  # Change this to your training image folder path
+import torch
+import torch.nn as nn
+from torch.utils.data import Dataset, DataLoader
+from torchvision import transforms, models
 
-# Define the path where the model should be saved
-model_save_path = "models/svm_model.pkl"
-
-# Create the directory if it doesn't exist
-os.makedirs("models", exist_ok=True)
-
-# Load the CSV file
-csv_data = pd.read_csv(csv_file_path)
-
-# Strip any extra whitespace in the column names (if applicable)
-csv_data.columns = csv_data.columns.str.strip()
-
-# Initialize lists to store HOG features and labels
-hog_features = []
-labels = []
-
-# Iterate over the rows in the CSV to load images and their corresponding labels
-for index, row in csv_data.iterrows():
-    image_id = str(row['image_id']).zfill(3)  # Format image_id as a 3-digit string if needed
-    label = row['is_homogenous']
-    image_filename = f"{image_id}.tif"
-    image_path = os.path.join(image_folder_path, image_filename)
-    
-    if os.path.exists(image_path):
-        try:
-            # Read the image file as bytes
-            with open(image_path, "rb") as img_file:
-                encoded_img = base64.b64encode(img_file.read()).decode('utf-8')
-            
-            # Use load_sample to decode and load the image
-            sample = load_sample(encoded_img)
-            img_array = sample["image"]
-            
-            # Append the image and label
-            hog_features.append(img_array)
-            labels.append(label)
-        except Exception as e:
-            print(f"Error processing image '{image_filename}': {e}")
-    else:
-        print(f"Image file '{image_filename}' not found in '{image_folder_path}'.")
-
-# Now, extract HOG features using preprocess_image from utils
-from utils import preprocess_image
-
-processed_hog_features = []
-for idx, image in enumerate(hog_features):
+def decode_image(encoded_img: str) -> np.ndarray:
+    """
+    Decodes a base64 encoded image string to a NumPy array.
+    """
     try:
-        features = preprocess_image(image)
-        processed_hog_features.append(features.flatten())
+        img_data = base64.b64decode(encoded_img)
+        np_arr = np.frombuffer(img_data, np.uint8)
+        image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+        if image is None:
+            raise ValueError("Image decoding resulted in None.")
+        return image
     except Exception as e:
-        print(f"Error extracting HOG features for image index {idx}: {e}")
+        raise ValueError(f"Failed to decode image: {e}")
 
-# Convert features and labels to numpy arrays
-hog_features_np = np.array(processed_hog_features)
-labels_np = np.array(labels)
+def load_sample(encoded_img: str) -> dict:
+    """
+    Loads and decodes the sample image.
+    """
+    image = decode_image(encoded_img)
+    return {
+        "image": image
+    }
 
-# Split the data into training and testing sets
-X_train, X_test, y_train, y_test = train_test_split(
-    hog_features_np, labels_np, test_size=0.2, random_state=42
-)
+class CustomDataset(Dataset):
+    def __init__(self, df, image_dir, transform=None):
+        self.df = df.reset_index(drop=True)
+        self.image_dir = image_dir
+        self.transform = transform
 
-# Train an SVM classifier
-svm_classifier = SVC(kernel='linear', random_state=42)
-svm_classifier.fit(X_train, y_train)
+    def __len__(self):
+        return len(self.df)
 
-# Predict on the test set
-y_pred = svm_classifier.predict(X_test)
+    def __getitem__(self, idx):
+        image_id = str(self.df.iloc[idx]['image_id ']).zfill(3)
+        label = int(self.df.iloc[idx]['is_homogenous'])
+        image_path = os.path.join(self.image_dir, f'{image_id}.tif')
+        
+        # Read image file as binary
+        with open(image_path, 'rb') as f:
+            img_bytes = f.read()
+        
+        # Encode image bytes to base64 string
+        encoded_img = base64.b64encode(img_bytes).decode('utf-8')
+        
+        # Decode image using provided function
+        image = decode_image(encoded_img)
+        
+        # Convert image to RGB
+        if len(image.shape) == 2 or image.shape[2] == 1:
+            image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
+        
+        if self.transform:
+            image = self.transform(image)
+        
+        return image, label
 
-# Calculate accuracy and classification report
-accuracy = accuracy_score(y_test, y_pred)
-report = classification_report(y_test, y_pred, target_names=['Heterogeneous', 'Homogeneous'])
+# Define transforms
+transform = transforms.Compose([
+    transforms.ToPILImage(),
+    transforms.Resize((224, 224)),
+    transforms.RandomHorizontalFlip(),
+    transforms.RandomVerticalFlip(),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.5]*3, std=[0.5]*3)
+])
 
-# Print the results
-print(f"Accuracy: {accuracy:.2f}")
-print("\nClassification Report:")
-print(report)
+# Load CSV files
+train_df = pd.read_csv('data/training.csv')
+val_df = pd.read_csv('data/validation.csv')
 
-# Save the trained model to disk
-joblib.dump(svm_classifier, model_save_path)
-print(f"Model saved to {model_save_path}")
+# Create datasets
+train_dataset = CustomDataset(train_df, 'data/training8bit', transform=transform)
+val_dataset = CustomDataset(val_df, 'data/validation', transform=transform)
+
+# Create data loaders
+train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=4)
+val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False, num_workers=4)
+
+# Save a few sample images to verify they are loaded correctly
+os.makedirs('plots', exist_ok=True)
+for i in range(5):
+    image, label = train_dataset[i]
+    image_np = image.numpy().transpose(1, 2, 0)
+    image_np = (image_np * 0.5) + 0.5  # Unnormalize
+    plt.imshow(image_np)
+    plt.title(f'Label: {label}')
+    plt.savefig(f'plots/sample_{i}.png')
+
+# Define the model
+model = models.resnet50(pretrained=True)
+model.fc = nn.Linear(model.fc.in_features, 1)  # Binary classification
+
+# Move model to device
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+model = model.to(device)
+
+# Define Focal Loss
+class FocalLoss(nn.Module):
+    def __init__(self, alpha=0.25, gamma=2, logits=True, reduce=True):
+        super(FocalLoss, self).__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+        self.logits = logits
+        self.reduce = reduce
+
+    def forward(self, inputs, targets):
+        targets = targets.type_as(inputs)
+        if self.logits:
+            BCE_loss = nn.functional.binary_cross_entropy_with_logits(inputs, targets, reduction='none')
+        else:
+            BCE_loss = nn.functional.binary_cross_entropy(inputs, targets, reduction='none')
+        pt = torch.exp(-BCE_loss)
+        F_loss = self.alpha * (1 - pt) ** self.gamma * BCE_loss
+
+        if self.reduce:
+            return torch.mean(F_loss)
+        else:
+            return F_loss
+
+criterion = FocalLoss()
+optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
+
+# Training loop
+num_epochs = 10
+for epoch in range(num_epochs):
+    model.train()
+    total_loss = 0
+    for images, labels in train_loader:
+        images = images.to(device)
+        labels = labels.float().unsqueeze(1).to(device)
+        
+        optimizer.zero_grad()
+        outputs = model(images)
+        loss = criterion(outputs, labels)
+        loss.backward()
+        optimizer.step()
+        total_loss += loss.item()
+        
+    avg_loss = total_loss / len(train_loader)
+    
+    # Validation loop
+    model.eval()
+    val_loss = 0
+    correct = 0
+    total = 0
+    with torch.no_grad():
+        for images, labels in val_loader:
+            images = images.to(device)
+            labels = labels.float().unsqueeze(1).to(device)
+            
+            outputs = model(images)
+            loss = criterion(outputs, labels)
+            val_loss += loss.item()
+            
+            preds = torch.sigmoid(outputs)
+            predicted = (preds > 0.5).float()
+            total += labels.size(0)
+            correct += (predicted == labels).sum().item()
+            
+    val_loss /= len(val_loader)
+    val_acc = 100 * correct / total
+    print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {avg_loss:.4f}, Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.2f}%')
