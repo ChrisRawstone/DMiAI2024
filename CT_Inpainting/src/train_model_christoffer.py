@@ -16,9 +16,9 @@ import datetime
 
 
 def main():
-    num_epochs = 7  # Adjust the number of epochs as needed
-    learning_rate=1e-2
-    batch_size = 4
+    num_epochs = 100  # Adjust the number of epochs as needed
+    learning_rate=1e-3
+    batch_size = 8
     api_key = "c187178e0437c71d461606e312d20dc9f1c6794f"
     data_dir = 'CT_Inpainting/data_sorted_by_vertebrae/0'  # Adjust this path to your data directory
 
@@ -91,6 +91,7 @@ def main():
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
     # Training loop with progress bars and W&B logging
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     for epoch in range(num_epochs):
         print(f'Epoch {epoch+1}/{num_epochs}')
         
@@ -213,7 +214,8 @@ def main():
 
                         # Save the figure
                         plt.tight_layout()
-                        plt.savefig(f'CT_Inpainting/plots/epoch_{epoch+1}_reconstruction.png')
+                        plt.savefig(f'CT_Inpainting/plots/{timestamp}_epoch_{epoch+1}_reconstruction.png')
+                        #plt.savefig(f'plots/epoch_{epoch+1}_reconstruction.png')
                         plt.show()
 
                         # Convert matplotlib figure to a numpy array
@@ -233,6 +235,9 @@ def main():
         wandb.log({"epoch": epoch + 1, "val_loss": val_loss})
 
         print(f'Epoch {epoch+1}/{num_epochs} - Training Loss: {train_loss:.4f}, Validation Loss: {val_loss:.4f}')
+        # save the model every 5th epoch
+        if (epoch+1) % 5 == 0:
+            torch.save(model.state_dict(), f'CT_Inpainting/models/ct_inpainting_unet_{timestamp}_epoch_{epoch+1}.pth')
 
     # Finish the W&B run
     wandb.finish()

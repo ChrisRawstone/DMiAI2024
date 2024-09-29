@@ -94,7 +94,7 @@ class CTInpaintingDataset(Dataset):
 
 
 def main():
-    num_epochs = 7  # Adjust the number of epochs as needed
+    num_epochs = 500  # Adjust the number of epochs as needed
     learning_rate=1e-4
     batch_size = 4
     api_key = "c187178e0437c71d461606e312d20dc9f1c6794f"
@@ -130,7 +130,7 @@ def main():
     ])
 
     # Prepare the dataset and dataloaders
-    data_dir = 'data'  # Adjust this path to your data directory
+    data_dir = 'CT_Inpainting/data'  # Adjust this path to your data directory
 
     dataset = CTInpaintingDataset(data_dir=data_dir, transform=transform)
 
@@ -154,6 +154,7 @@ def main():
     criterion = nn.L1Loss()  # MAE
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     # Training loop with progress bars and W&B logging
     for epoch in range(num_epochs):
         print(f'Epoch {epoch+1}/{num_epochs}')
@@ -236,7 +237,8 @@ def main():
 
                         # Save the figure
                         plt.tight_layout()
-                        plt.savefig(f'plots/epoch_{epoch+1}_reconstruction.png')
+                        #plt.savefig(f'plots/epoch_{epoch+1}_reconstruction.png')
+                        plt.savefig(f'CT_Inpainting/plots/{timestamp}_epoch_{epoch+1}_reconstruction.png')
                         plt.show()
 
                         # Convert matplotlib figure to a numpy array
@@ -256,18 +258,23 @@ def main():
         wandb.log({"epoch": epoch + 1, "val_loss": val_loss})
 
         print(f'Epoch {epoch+1}/{num_epochs} - Training Loss: {train_loss:.4f}, Validation Loss: {val_loss:.4f}')
+        # save the model every 5th epoch
+        if (epoch+1) % 5 == 0:
+            torch.save(model.state_dict(), f'CT_Inpainting/models/ct_inpainting_unet_{timestamp}_epoch_{epoch+1}.pth')
 
     # Finish the W&B run
     wandb.finish()
 
     if test_small_dataset:
-        torch.save(model.state_dict(), 'models/shit_ct_inpainting_unet.pth')
+        #torch.save(model.state_dict(), 'models/shit_ct_inpainting_unet.pth')
+        torch.save(model.state_dict(), 'CT_Inpainting/models/shit_ct_inpainting_unet.pth')
     else:
         # get time stamp
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
         # Save the trained model
-        torch.save(model.state_dict(), f'models/ct_inpainting_unet_{timestamp}.pth')
+        #torch.save(model.state_dict(), f'models/ct_inpainting_unet_{timestamp}.pth')
+        torch.save(model.state_dict(), f'CT_Inpainting/models/ct_inpainting_unet_{timestamp}.pth')
 
 
 
