@@ -84,6 +84,12 @@ def evaluate_model():
     total_samples = 0  # Track the total number of samples
     total_correct = 0  # Track the total number of correct predictions
 
+    # Custom score counters
+    n_0 = 0
+    n_1 = 0
+    a_0 = 0
+    a_1 = 0
+
     with torch.no_grad():
         for images, labels, img_paths in val_loader:
             images, labels = images.to(device), labels.float().to(device)
@@ -104,6 +110,18 @@ def evaluate_model():
                 label = int(labels[i].item())
                 pred = int(preds[i].item())
 
+                # Increment counters
+                if label == 0:
+                    n_0 += 1
+                else:
+                    n_1 += 1
+
+                if pred == label:
+                    if label == 0:
+                        a_0 += 1
+                    else:
+                        a_1 += 1
+
                 # Check if the prediction is correct
                 if pred == label:
                     class_correct[label] += 1  # Increment correct counter for the class
@@ -119,12 +137,16 @@ def evaluate_model():
     # Calculate accuracy
     accuracy = total_correct / total_samples if total_samples > 0 else 0
 
+    # Calculate the custom score
+    custom_score = (a_0 * a_1) / (n_0 * n_1) if n_0 > 0 and n_1 > 0 else 0
+
     print(f"\nValidation Results")
     print(f"Validation Loss: {val_running_loss / len(val_loader):.4f}")
     print(f"Total Correct Predictions: {total_correct} / {total_samples}")
     print(f"Accuracy: {accuracy:.4f}")
     print(f"Correct Predictions for Class 0: {class_correct[0]}")
     print(f"Correct Predictions for Class 1: {class_correct[1]}")
+    print(f"Custom Score: {custom_score:.4f}")
 
     # Consolidate all images into one plot for visualization
     fig, axes = plt.subplots(2, max_samples_per_class, figsize=(15, 6))
@@ -141,12 +163,12 @@ def evaluate_model():
 
     # Adjust spacing to minimize white space
     plt.subplots_adjust(left=0, right=1, top=0.95, bottom=0, hspace=0.1, wspace=0.1)
-    plt.suptitle(f'Validation Results - Accuracy: {accuracy:.4f}')
+    plt.suptitle(f'Validation Results - Accuracy: {accuracy:.4f} - Custom Score: {custom_score:.4f}')
     plt.tight_layout()
 
     # Save the entire figure once with minimal white space
     plt.savefig(os.path.join(plot_dir, f'validation_results.png'), bbox_inches='tight')
-    plt.close()  # Use close() instead of show() to prevent non-interactive backend warnings
+    plt.close()
 
 if __name__ == "__main__":
     evaluate_model()

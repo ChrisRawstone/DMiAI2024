@@ -70,8 +70,8 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Paths
-    train_dir = "data/training"
-    train_csv_path = "data/training.csv"
+    train_dir = "data/validation"
+    train_csv_path = "data/validation.csv"
     validation_dir = "data/validation"  # Same as in predict.py
     val_csv_path = "data/validation.csv"  # Same as in predict.py
 
