@@ -82,11 +82,11 @@ def run_game():
         print(f"Elapsed time: {elapsed_time}")
         print("B2:",state.signals[6])
 
-        if elapsed_time < 5:
-            next_signals["B2"] = "green"
+        if elapsed_time < 10:
+            next_signals["A1"] = "green"
         else:
             print("Changing to red")
-            next_signals["B2"] = "red"
+            next_signals["A1"] = "red"
 
         current_tick = state.simulation_ticks
 

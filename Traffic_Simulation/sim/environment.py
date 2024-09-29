@@ -1,4 +1,3 @@
-
 from time import time
 from time import sleep
 from uuid import uuid4
@@ -18,6 +17,11 @@ from loguru import logger
 from dtos import (
     TrafficSimulationPredictRequestDto, VehicleDto, SignalDto, LegDto, AllowedGreenSignalCombinationDto
 )
+
+sumo_version = 'sumo-gui'
+# sumo_version = 'sumo'
+sleep_time = 1
+print_every = 200
 
 def load_configuration(configuration_file, start_time, test_duration_seconds):
 
@@ -199,12 +203,13 @@ class TrafficSimulationEnvHandler():
         score = 0.0
 
         for vehicle, waiting_time in self.vehicle_waiting_time.items():
+            print(f"Vehicle {vehicle} waited for {waiting_time} seconds")
             score += waiting_time
 
             if waiting_time > self.delay_penalty_start_seconds:
                 score += (self.vehicle_waiting_time[vehicle] - self.delay_penalty_start_seconds)**self.delay_penalty_coefficient
 
-
+        print(f"Score: {score}")
         return score
     
     def get_simulation_is_running(self):
@@ -231,6 +236,7 @@ class TrafficSimulationEnvHandler():
 
         for group, color in next_groups.items():
             if not group in self.next_groups:
+                # Is this even possible to get here?
                 logic_errors.append(f"Invalid signal group {group} at time step {self.get_simulation_ticks()}")
                 continue
 
@@ -241,27 +247,31 @@ class TrafficSimulationEnvHandler():
                 green_lights.append(group)
 
         # Check the logic according to the green light combinations
+        for group, color in all_signals.items():
+            if color == "green":
+                # Check if we can allow this green light in combination with the other green light requests
+
+                for other_green_lights in green_lights:
+                    if group == other_green_lights:
+                        continue
+
+                    if not other_green_lights in self.allowed_green_signal_combinations[group]:
+                        green_lights.remove(group)
+                        logic_errors.append(f"Invalid green light combination at time step {self.get_simulation_ticks()}: {group} and {other_green_lights}. Removed {group} from green lights.")
+                        break
+        
+        for group in all_signals.keys():
+            self.next_groups[group] = 'red'
+            
+        # Set the green lights in the next groups
         for group in green_lights:
-            for other_green_light in green_lights:
-                if group == other_green_light:
-                    continue
-
-                if not other_green_light in self.allowed_green_signal_combinations[group]:
-                    green_lights.remove(group)
-                    logic_errors.append(
-                        f"Invalid green light combination at time step {self.get_simulation_ticks()}: {group} and {other_green_light}. Removed {group} from green lights.")
-                    break
-
-        # Set the next_groups with the validated colors
-        for group in self.next_groups:
-            self.next_groups[group] = all_signals[group]
+            self.next_groups[group] = 'green'
 
         if len(logic_errors) == 0:
             return None
-
+        
         logger.info(f"logic_errors: {logic_errors}")
         return ";".join(logic_errors)
-
                     
     def set_next_signals(self, next_groups):
 
@@ -269,34 +279,47 @@ class TrafficSimulationEnvHandler():
         
         return errors
 
-    def _update_group_states(self):
-
-        for group in self.group_states:
-            desired_color = self.next_groups.get(group, 'red')
-            current_color, time = self.group_states[group]
-            if desired_color == current_color:
-                self.group_states[group] = (current_color, time+1)
-            elif current_color == 'redamber':
-                if time == self.red_amber_time:
-                    self.group_states[group] = ('green', 1)
-                else:
-                    self.group_states[group] = ('redamber', time+1)
-            elif current_color == "amber":
-                if time == self.amber_time:
-                    self.group_states[group] = ('red', 1)
-                else:
-                    self.group_states[group] = ('amber', time+1)
-            elif desired_color == 'red' and current_color == 'green':
-                if time == self.min_green_time:
-                    self.group_states[group] = ('amber', 1)
-                else:
-                    self.group_states[group] = ('green', time+1)
-            elif desired_color == 'green' and current_color == 'red':
-                self.group_states[group] = ('redamber', 1)
-            else:
-                raise Exception(f"Invalid state transition at tick {self.simulation_ticks}, {current_color} -> {desired_color}")
-
+    def _update_group_states(self, next_groups):
+        for group, new_color in next_groups.items():
+            if group not in self.group_states:
+                continue
             
+            current_color, time_in_state = self.group_states[group]
+
+            if new_color == current_color:
+                # Increment time spent in current state
+                self.group_states[group] = (current_color, time_in_state + 1)
+            else:
+                # Handle transitions
+                if current_color == 'green' and new_color == 'red':
+                    # Ensure minimum green time before transitioning to amber
+                    if time_in_state >= self.min_green_time:
+                        self.group_states[group] = ('amber', 1)
+                    else:
+                        self.group_states[group] = (current_color, time_in_state + 1)
+                
+                elif current_color == 'amber' and new_color == 'red':
+                    # Transition from amber to red
+                    if time_in_state >= self.amber_time:
+                        self.group_states[group] = ('red', 1)
+                    else:
+                        self.group_states[group] = ('amber', time_in_state + 1)
+                
+                elif current_color == 'red' and new_color == 'green':
+                    # Transition from red to redamber, then green
+                    self.group_states[group] = ('redamber', 1)
+                
+                elif current_color == 'redamber' and new_color == 'green':
+                    # Transition from redamber to green
+                    if time_in_state >= self.red_amber_time:
+                        self.group_states[group] = ('green', 1)
+                    else:
+                        self.group_states[group] = ('redamber', time_in_state + 1)
+                
+                else:
+                    # Reset state if transitioning directly from one color to another
+                    self.group_states[group] = (new_color, 1)
+   
     def _color_to_letter(self, color):
         if color == 'red':
             return 'r'
@@ -362,7 +385,7 @@ class TrafficSimulationEnvHandler():
         return observed_vehicles
 
     def demo(self):
-        sumoBinary = checkBinary('sumo')
+        sumoBinary = checkBinary(sumo_version)
 
         logger.info('Traffic simulation - starting sumo....')
 
@@ -373,11 +396,6 @@ class TrafficSimulationEnvHandler():
         self._is_initialized = True
 
         simulationTicks = self.warm_up_ticks
-
-        self.set_next_signals({
-            'B2': 'green',
-            'B1': 'green'
-        })
 
         for i in range(simulationTicks):
             self._run_one_tick()
@@ -412,8 +430,7 @@ class TrafficSimulationEnvHandler():
                     if self._error_queue and signal_logic_errors:
                         self._error_queue.put(signal_logic_errors)
 
-                self._update_group_states()
-
+                self._update_group_states(self.next_groups)
             except Exception as e:
                 self.errors.append(e)
 
@@ -442,7 +459,7 @@ class TrafficSimulationEnvHandler():
         self._simulation_is_running = True
 
         logger.info('Traffic simulation - starting sumo....')
-        sumoBinary = checkBinary('sumo-gui')
+        sumoBinary = checkBinary(sumo_version)
 
         sim_instance = uuid4().hex
 
@@ -460,25 +477,15 @@ class TrafficSimulationEnvHandler():
             self._run_one_tick()
 
         while True:
-            logger.info(f'Traffic simulation - tick {self.simulation_ticks}....')
+            if self.simulation_ticks % print_every == 0:
+                logger.info(f'Traffic simulation - tick {self.simulation_ticks}....')
             
             if self.simulation_ticks < (self._test_duration_seconds + self.warm_up_ticks):
                 self._run_one_tick()
-                sleep(1)
+                sleep(sleep_time)
             else:
                 self._run_one_tick(terminates_now=True)
                 break
 
         self._traci_connection.close()
         self._simulation_is_running = False
-
-
-
-
-
-
-
-
-
-    
-    
