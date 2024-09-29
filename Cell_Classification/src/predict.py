@@ -8,7 +8,7 @@ from skimage.feature import hog
 import joblib
 
 # Load the trained model
-model_path = "models/svm_model.pkl"  # Path to the saved model
+model_path = "models/svm_model_optimized.pkl"  # Path to the saved model
 model = joblib.load(model_path)
 print(f"Model loaded from {model_path}")
 
