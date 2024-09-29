@@ -21,7 +21,7 @@ def predict_local(model, data_loader, calculate_custom_score, device) -> int:
             inputs = inputs.to(device)
             labels = labels.to(device)
             
-            logits = model(image)
+            logits = model(inputs)
             probabilities = F.softmax(logits, dim=1)
             predicted = torch.argmax(probabilities, dim=1)
                     
