@@ -12,7 +12,7 @@ import joblib
 # Define paths for the validation data and model
 validation_csv_path = "data/validation.csv"  # Change this to your validation CSV path
 validation_image_folder_path = "data/validation/"  # Change this to your validation image folder path
-model_load_path = "models/svm_model.pkl"  # Path to the saved model
+model_load_path = "models/svm_model_optimized.pkl"  # Path to the saved model
 
 # Load the validation CSV file
 validation_data = pd.read_csv(validation_csv_path)
