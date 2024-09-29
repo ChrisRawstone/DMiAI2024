@@ -402,9 +402,9 @@ scaler = torch.cuda.amp.GradScaler()
 # 13. Training and Validation Loops with Custom Score
 # ===============================
 
-num_epochs = 50
+num_epochs = 100
 best_custom_score = 0
-early_stopping_patience = 10
+early_stopping_patience = 50
 patience_counter = 0
 
 for epoch in range(num_epochs):
@@ -421,7 +421,7 @@ for epoch in range(num_epochs):
 
         optimizer.zero_grad()
 
-        with torch.cuda.amp.autocast():
+        with torch.amp.autocast("cuda"):
             outputs = model(images)
             loss = criterion(outputs, labels)
 
@@ -455,7 +455,7 @@ for epoch in range(num_epochs):
             images = images.to(device, non_blocking=True)
             labels = labels.float().unsqueeze(1).to(device, non_blocking=True)
 
-            with torch.cuda.amp.autocast():
+            with torch.amp.autocast("cuda"):
                 outputs = model(images)
                 loss = criterion(outputs, labels)
 
