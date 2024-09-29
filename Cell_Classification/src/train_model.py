@@ -137,14 +137,6 @@ def load_sample(encoded_img: str) -> dict:
 
 class CustomDataset(Dataset):
     def __init__(self, df, image_dir, transform=None):
-        """
-        Initializes the dataset with a DataFrame, image directory, and transformations.
-
-        Args:
-            df (pd.DataFrame): DataFrame containing 'image_id' and 'is_homogenous'.
-            image_dir (str): Directory where images are stored.
-            transform (albumentations.Compose, optional): Transformations to apply.
-        """
         self.df = df.reset_index(drop=True)
         self.image_dir = image_dir
         self.transform = transform
@@ -153,29 +145,17 @@ class CustomDataset(Dataset):
         return len(self.df)
 
     def __getitem__(self, idx):
-        """
-        Retrieves an image and its label by index.
-
-        Args:
-            idx (int): Index of the sample.
-
-        Returns:
-            tuple: (image tensor, label)
-        """
         image_id = str(self.df.iloc[idx]['image_id']).zfill(3)
         label = int(self.df.iloc[idx]['is_homogenous'])
         image_path = os.path.join(self.image_dir, f'{image_id}.tif')
 
-        # Read image file as binary
-        try:
-            with open(image_path, 'rb') as f:
-                img_bytes = f.read()
-        except FileNotFoundError:
-            logging.error(f"Image file not found: {image_path}")
+        # Read image directly using cv2
+        image = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
+        if image is None:
+            logging.error(f"Image file not found or failed to load: {image_path}")
             # Return a black image if file not found
-            image = np.zeros((224, 224), dtype=np.uint8)
+            image = np.zeros((224, 224, 3), dtype=np.uint8)
             label = 0
-            image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)  # Convert to RGB
             if self.transform:
                 augmented = self.transform(image=image)
                 image = augmented['image']
@@ -183,22 +163,29 @@ class CustomDataset(Dataset):
                 image = transforms.ToTensor()(image)
             return image, label
 
-        # Encode image bytes to base64 string
-        encoded_img = base64.b64encode(img_bytes).decode('utf-8')
+        # Handle 16-bit images by converting to 8-bit
+        if image.dtype == np.uint16:
+            image = (image / 256).astype(np.uint8)
 
-        # Decode image using provided function
-        image = decode_image(encoded_img)
-
-        # Convert grayscale to RGB by duplicating channels
-        image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
+        # Convert grayscale to RGB if needed
+        if len(image.shape) == 2:
+            image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
+        elif image.shape[2] == 1:
+            image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
+        elif image.shape[2] == 4:
+            # Handle images with alpha channel
+            image = cv2.cvtColor(image, cv2.COLOR_BGRA2RGB)
+        else:
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
         if self.transform:
             augmented = self.transform(image=image)
             image = augmented['image']
         else:
-            image = transforms.ToTensor()(image).permute(2, 0, 1)  # Convert to [C, H, W]
+            image = transforms.ToTensor()(image).permute(2, 0, 1)
 
         return image, label
+
 
 # ===============================
 # 5. Data Augmentation and Transforms
@@ -238,7 +225,7 @@ logging.info(f"Validation samples: {len(val_df)}")
 # 7. Create Datasets and DataLoaders with Weighted Sampling
 # ===============================
 
-train_dataset = CustomDataset(train_df, 'data/training8bit', transform=train_transform)
+train_dataset = CustomDataset(train_df, 'data/training', transform=train_transform)
 val_dataset = CustomDataset(val_df, 'data/validation', transform=val_transform)
 
 # Calculate class weights for WeightedRandomSampler
