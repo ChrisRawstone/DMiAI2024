@@ -17,7 +17,7 @@ import datetime
 
 def main():
     num_epochs = 7  # Adjust the number of epochs as needed
-    learning_rate=1e-4
+    learning_rate=1e-2
     batch_size = 4
     api_key = "c187178e0437c71d461606e312d20dc9f1c6794f"
     data_dir = 'CT_Inpainting/data_sorted_by_vertebrae/0'  # Adjust this path to your data directory
@@ -77,7 +77,7 @@ def main():
 
     # if true, use small dataset for testing
     if test_small_dataset:
-        train_dataset = torch.utils.data.Subset(train_dataset, range(8))
+        train_dataset = torch.utils.data.Subset(train_dataset, range(4))
         val_dataset = torch.utils.data.Subset(val_dataset, range(2))
 
 
@@ -86,7 +86,8 @@ def main():
 
     # Initialize the model, loss function, and optimizer
     model = UNet(in_channels=3, out_channels=1).to(device)
-    criterion = nn.L1Loss()  # MAE
+    #criterion = nn.L1Loss()  # MAE
+    criterion = nn.L1Loss(reduction='none')  # MAE
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
     # Training loop with progress bars and W&B logging
@@ -103,13 +104,33 @@ def main():
                 inputs = inputs.to(device)  # inputs shape: [batch_size, 4, 256, 256]
                 # visualize the input
                 plt.imshow(inputs[0,0,:,:].cpu().numpy())
+                # create directory if it does not exist
+                os.makedirs('CT_Inpainting/plots', exist_ok=True)
                 plt.savefig('CT_Inpainting/plots/input.png')
                 labels = labels.to(device)  # labels shape: [batch_size, 1, 256, 256]
+                # they do not have that dim, so add the channel dim
+                labels = labels.unsqueeze(1)
 
                 optimizer.zero_grad()
                 outputs = model(inputs)
 
-                loss = criterion(outputs, labels)
+                #loss = criterion(outputs, labels)
+
+                # find the overlap between the mask and tissue
+
+                mask = inputs[:, 1]  # Mask image
+                tissue = inputs[:, 2]
+                area_to_fill = (tissue>0) & (mask>0) # get the indices where the mask and tissue overlap
+                area_to_fill = area_to_fill.unsqueeze(1)
+                
+                # adjust the loss to only consider the area that needs to be filled
+
+                loss = criterion(outputs[area_to_fill], labels[area_to_fill])
+                # normalize the loss according to the number of pixels that needed to be filled
+                # Adding a small epsilon to avoid division by zero
+                epsilon = 1e-8
+                loss = torch.sum(loss) / area_to_fill.sum() + epsilon
+                      
                 loss.backward()
                 optimizer.step()
 
@@ -135,12 +156,27 @@ def main():
                 for batch_idx, (inputs, labels) in enumerate(val_loader):
                     inputs = inputs.to(device)
                     labels = labels.to(device)
+                    # they miss the channel dim, so add it
+                    labels = labels.unsqueeze(1)
 
                     # Perform reconstruction
                     outputs = model(inputs)
 
+                    mask = inputs[:, 1]  # Mask image
+                    tissue = inputs[:, 2]
+                    area_to_fill = (tissue>0) & (mask>0) # get the indices where the mask and tissue overlap
+                    area_to_fill = area_to_fill.unsqueeze(1)
+                    
+                    # adjust the loss to only consider the area that needs to be filled
+
+                    loss = criterion(outputs[area_to_fill], labels[area_to_fill])
+                    # normalize the loss according to the number of pixels that needed to be filled
+                    # Adding a small epsilon to avoid division by zero
+                    epsilon = 1e-8
+                    loss = torch.sum(loss) / area_to_fill.sum() + epsilon
+
                     # Calculate loss
-                    loss = criterion(outputs, labels)
+                    #loss = criterion(outputs, labels)
                     val_loss += loss.item() * inputs.size(0)
 
                     # Update progress bar for each batch
@@ -169,7 +205,9 @@ def main():
                         axs[2].set_title(f'Reconstructed (Epoch {epoch+1})')
                         axs[2].axis('off')
 
-                        axs[3].imshow(ground_truth_np, cmap='gray')
+                        # if 
+                        #axs[3].imshow(ground_truth_np, cmap='gray')
+                        axs[3].imshow(ground_truth_np[0], cmap='gray') # quick fix for dim mismatch
                         axs[3].set_title('Ground Truth')
                         axs[3].axis('off')
 
