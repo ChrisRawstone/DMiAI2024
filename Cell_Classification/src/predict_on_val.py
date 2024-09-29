@@ -1,152 +1,72 @@
+# predict.py
+
+# Import necessary libraries
 import os
 import pandas as pd
-import torch
-from torch.utils.data import Dataset, DataLoader
-from torchvision import transforms, models
+import numpy as np
 from PIL import Image
-import torch.nn as nn
-import matplotlib.pyplot as plt
-import matplotlib.image as mpimg
+from skimage.feature import hog
+from sklearn.metrics import classification_report, accuracy_score
+import joblib
 
-# Custom Dataset class for loading images
-class CustomImageDataset(Dataset):
-    def __init__(self, annotations_df, root_dir, transform=None, id_length=3):
-        self.annotations = annotations_df.reset_index(drop=True)
-        self.root_dir = root_dir
-        self.transform = transform
-        self.id_length = id_length
+# Define paths for the validation data and model
+validation_csv_path = "data/validation.csv"  # Change this to your validation CSV path
+validation_image_folder_path = "data/validation/"  # Change this to your validation image folder path
+model_load_path = "models/svm_model.pkl"  # Path to the saved model
 
-    def __len__(self):
-        return len(self.annotations)
+# Load the validation CSV file
+validation_data = pd.read_csv(validation_csv_path)
 
-    def __getitem__(self, index):
-        # Format the image_id with leading zeros based on `id_length`
-        img_id = str(self.annotations.iloc[index, 0]).zfill(self.id_length)
-        img_path = os.path.join(self.root_dir, f"{img_id}.tif")
+# Strip any extra whitespace in the column names (if applicable)
+validation_data.columns = validation_data.columns.str.strip()
 
-        image = Image.open(img_path).convert("RGB")
-        label = int(self.annotations.iloc[index, 1])  # Convert label to int (0 or 1)
+# Set the desired image size (e.g., 128x128) for resizing
+image_size = (128, 128)
 
-        if self.transform:
-            image = self.transform(image)
-        return image, label, img_path  # Return the image path as well
+# Load the saved model
+svm_classifier = joblib.load(model_load_path)
+print(f"Model loaded from {model_load_path}")
 
-# Define the evaluation function
-def evaluate_model():
-    # Paths
-    validation_dir = "data/validation"  # Folder with validation images
-    validation_csv = "data/validation.csv"  # CSV with validation annotations
-    model_path = "resnet50_homogeneity_detection.pth"  # Path to the saved model
-    plot_dir = "validation_plots"
-    os.makedirs(plot_dir, exist_ok=True)
+# Initialize lists to store images and labels
+validation_images = []
+validation_labels = []
 
-    # Check if GPU is available and move the model to GPU if possible
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# Iterate over the rows in the CSV to load images and their corresponding labels
+for index, row in validation_data.iterrows():
+    image_id = str(row['image_id']).zfill(3)  # Format image_id as a 3-digit string if needed
+    label = row['is_homogenous']
+    image_path = os.path.join(validation_image_folder_path, f"{image_id}.tif")
+    
+    if os.path.exists(image_path):
+        # Open, resize, and convert the image to a numpy array
+        img = Image.open(image_path).resize(image_size)
+        img_array = np.array(img)
+        validation_images.append(img_array)
+        validation_labels.append(label)
 
-    # Image transformations (Ensure consistency with train.py)
-    transform = transforms.Compose([
-        transforms.Resize((224, 224)),  # ResNet expects 224x224 images
-        transforms.ToTensor(),
-        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-    ])
+# Extract HOG features from each validation image
+validation_hog_features = []
+for image in validation_images:
+    # Convert the image to grayscale if it's not already
+    if len(image.shape) == 3:
+        image = Image.fromarray(image).convert('L')
+        image = np.array(image)
+    # Compute HOG features for the image
+    features = hog(image, pixels_per_cell=(8, 8), cells_per_block=(2, 2), visualize=False)
+    validation_hog_features.append(features)
 
-    # Load validation annotations
-    annotations = pd.read_csv(validation_csv)
+# Convert features and labels to numpy arrays
+validation_hog_features_np = np.array(validation_hog_features)
+validation_labels_np = np.array(validation_labels)
 
-    # Create validation dataset
-    val_dataset = CustomImageDataset(
-        annotations_df=annotations, root_dir=validation_dir, transform=transform
-    )
+# Predict on the validation set
+y_validation_pred = svm_classifier.predict(validation_hog_features_np)
 
-    # Create dataloader for validation set
-    val_loader = DataLoader(val_dataset, batch_size=4, shuffle=False)
+# Calculate accuracy and classification report for validation set
+validation_accuracy = accuracy_score(validation_labels_np, y_validation_pred)
+validation_report = classification_report(validation_labels_np, y_validation_pred, target_names=['Heterogeneous', 'Homogeneous'])
 
-    # Load the pre-trained ResNet50 model (Consistent Initialization)
-    model = models.resnet50(pretrained=True)  # Changed from pretrained=False to pretrained=True
-    num_features = model.fc.in_features
-    model.fc = nn.Linear(num_features, 1)  # Binary classification
-
-    # Load the trained model weights
-    model.load_state_dict(torch.load(model_path, map_location=device))  # Ensure loading on the correct device
-    model = model.to(device)
-
-    # Define the loss function
-    criterion = nn.BCEWithLogitsLoss()
-
-    # Evaluation
-    model.eval()
-    val_running_loss = 0.0
-    class_samples = {0: 0, 1: 0}  # To keep track of how many images we have per class
-    class_correct = {0: 0, 1: 0}  # To track number of correct predictions for each class
-    max_samples_per_class = 5  # Plot 5 images per class
-    images_to_plot = {0: [], 1: []}  # To store image paths per class
-
-    total_samples = 0  # Track the total number of samples
-    total_correct = 0  # Track the total number of correct predictions
-
-    with torch.no_grad():
-        for images, labels, img_paths in val_loader:
-            images, labels = images.to(device), labels.float().to(device)
-
-            outputs = model(images)
-            loss = criterion(outputs.squeeze(), labels)
-            val_running_loss += loss.item()
-
-            # Apply sigmoid to outputs and get predictions
-            probs = torch.sigmoid(outputs.squeeze())
-
-            # Use consistent thresholding
-            threshold = 0.5  # Changed from 0.3 to 0.5
-            preds = (probs >= threshold).long()
-
-            # Count the number of correct predictions for each class
-            for i in range(images.size(0)):
-                label = int(labels[i].item())
-                pred = int(preds[i].item())
-
-                # Check if the prediction is correct
-                if pred == label:
-                    class_correct[label] += 1  # Increment correct counter for the class
-                    total_correct += 1  # Increment total correct counter
-
-                total_samples += 1  # Increment total sample counter
-
-                img_path = img_paths[i]  # Directly get image path from batch
-
-                if len(images_to_plot[label]) < max_samples_per_class:
-                    images_to_plot[label].append((img_path, label, pred))
-
-    # Calculate accuracy
-    accuracy = total_correct / total_samples if total_samples > 0 else 0
-
-    print(f"\nValidation Results")
-    print(f"Validation Loss: {val_running_loss / len(val_loader):.4f}")
-    print(f"Total Correct Predictions: {total_correct} / {total_samples}")
-    print(f"Accuracy: {accuracy:.4f}")
-    print(f"Correct Predictions for Class 0: {class_correct[0]}")
-    print(f"Correct Predictions for Class 1: {class_correct[1]}")
-
-    # Consolidate all images into one plot for visualization
-    fig, axes = plt.subplots(2, max_samples_per_class, figsize=(15, 6))
-    for idx, label in enumerate([0, 1]):
-        for jdx in range(max_samples_per_class):
-            if jdx < len(images_to_plot[label]):  # Check if we have enough samples
-                img_path, true_label, pred_label = images_to_plot[label][jdx]
-
-                # Use matplotlib.image to read and plot .tif images
-                img = mpimg.imread(img_path)
-                axes[idx, jdx].imshow(img)
-                axes[idx, jdx].axis('off')
-                axes[idx, jdx].set_title(f'True: {true_label}, Pred: {pred_label}')
-
-    # Adjust spacing to minimize white space
-    plt.subplots_adjust(left=0, right=1, top=0.95, bottom=0, hspace=0.1, wspace=0.1)
-    plt.suptitle(f'Validation Results - Accuracy: {accuracy:.4f}')
-    plt.tight_layout()
-
-    # Save the entire figure once with minimal white space
-    plt.savefig(os.path.join(plot_dir, f'validation_results.png'), bbox_inches='tight')
-    plt.close()  # Use close() instead of show() to prevent non-interactive backend warnings
-
-if __name__ == "__main__":
-    evaluate_model()
+# Print validation results
+print(f"Validation Accuracy: {validation_accuracy:.2f}")
+print("\nValidation Classification Report:")
+print(validation_report)
