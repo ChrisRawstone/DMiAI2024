@@ -40,14 +40,14 @@ def main():
     num_epochs = 20
     batch_size = 4
     learning_rate = 0.000001  # Increased learning rate
-    pos_weight = 2.0  # Increased pos_weight to give more weight to minority class
+    pos_weight = 1.0  # Increased pos_weight to give more weight to minority class
 
     # Check if GPU is available and move the model to GPU if possible
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Paths
-    data_dir = "data/validation"
-    csv_path = "data/validation.csv"
+    data_dir = "data/training"
+    csv_path = "data/training.csv"
     plot_dir = "plots"
     os.makedirs(plot_dir, exist_ok=True)
 
@@ -213,7 +213,7 @@ def main():
 
         # Save the entire figure once per epoch with minimal white space
         plt.savefig(os.path.join(plot_dir, f'epoch_{epoch+1}_validation_results.png'), bbox_inches='tight')
-        plt.show()
+        # plt.show()
 
     print(f"Training completed. Best model saved at epoch {best_epoch} with {best_combined_correct} correct predictions.")
 

@@ -34,8 +34,8 @@ class CustomImageDataset(Dataset):
 # Define the evaluation function
 def evaluate_model():
     # Paths
-    validation_dir = "data/training"  # Folder with validation images
-    validation_csv = "data/training.csv"  # CSV with validation annotations
+    validation_dir = "data/validation"  # Folder with validation images
+    validation_csv = "data/validation.csv"  # CSV with validation annotations
     model_path = "resnet50_homogeneity_detection.pth"  # Path to the saved model
     plot_dir = "validation_plots"
     os.makedirs(plot_dir, exist_ok=True)
