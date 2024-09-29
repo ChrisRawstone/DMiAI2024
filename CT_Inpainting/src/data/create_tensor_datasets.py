@@ -31,6 +31,7 @@ def create_tensor_data_set(path_to_folder,save_data_set=False):
     # crate a tensor data set
     tensor_data_set = torch.zeros(n_samples, 3, 256, 256)
     tensor_ground_truth = torch.zeros(n_samples, 256, 256)
+    tensor_vertebrae = torch.zeros(n_samples, 1)
 
     # go through each file in the the vertebrae folder
     # vertebrae files
@@ -43,6 +44,9 @@ def create_tensor_data_set(path_to_folder,save_data_set=False):
         with open(os.path.join(sub_directories_paths[4], file_name), 'r') as f:
             # get the vertebrae number
             vertebrae_num = int(f.readline().strip())
+        
+        tensor_vertebrae[index] = vertebrae_num # save the vertebrae number
+        
         
         for i, folder in enumerate(sub_directories_paths):
             if not os.path.exists(folder):
@@ -70,6 +74,8 @@ def create_tensor_data_set(path_to_folder,save_data_set=False):
     if save_data_set:
         torch.save(tensor_data_set, os.path.join(path_to_folder, 'tensor_data_set.pt'))
         torch.save(tensor_ground_truth, os.path.join(path_to_folder, 'tensor_label_set.pt'))
+        torch.save(tensor_vertebrae, os.path.join(path_to_folder, 'tensor_vertebrae_set.pt'))
+
 
     return tensor_data_set
 

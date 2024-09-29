@@ -12,76 +12,9 @@ from tqdm import tqdm  # Import tqdm for progress bars
 import matplotlib.pyplot as plt  # Import matplotlib for visualization
 import numpy as np
 from src.models.model import UNet
+from data.data_set_classes import BaseClass
 import datetime
 
-
-
-
-# Define the Dataset class
-class CTInpaintingDataset(Dataset):
-    def __init__(self, data_dir, transform=None):
-        self.corrupted_dir = os.path.join(data_dir, 'corrupted')
-        self.mask_dir = os.path.join(data_dir, 'mask')
-        self.tissue_dir = os.path.join(data_dir, 'tissue')
-        self.vertebrae_dir = os.path.join(data_dir, 'vertebrae')
-        self.ct_dir = os.path.join(data_dir, 'ct')
-
-        # Get list of corrupted images
-        self.filenames = sorted(os.listdir(self.corrupted_dir))
-        self.transform = transform
-
-    def __len__(self):
-        return len(self.filenames)
-
-    def __getitem__(self, idx):
-        # Get the filename
-        filename = self.filenames[idx]  # e.g., 'corrupted_000_1.png'
-
-        # Extract patient ID and slice number
-        # Remove the prefix 'corrupted_' and the extension '.png'
-        base_filename = filename[len('corrupted_'):-len('.png')]  # '000_1'
-        patient_id_str, slice_num_str = base_filename.split('_')
-        patient_id = int(patient_id_str)
-        slice_num = int(slice_num_str)
-
-        # Construct file paths
-        corrupted_path = os.path.join(self.corrupted_dir, filename)
-        mask_filename = filename.replace('corrupted_', 'mask_')
-        mask_path = os.path.join(self.mask_dir, mask_filename)
-        tissue_filename = filename.replace('corrupted_', 'tissue_')
-        tissue_path = os.path.join(self.tissue_dir, tissue_filename)
-        ct_filename = filename.replace('corrupted_', 'ct_')
-        ct_path = os.path.join(self.ct_dir, ct_filename)
-        vertebrae_filename = filename.replace('corrupted_', 'vertebrae_').replace('.png', '.txt')
-        vertebrae_path = os.path.join(self.vertebrae_dir, vertebrae_filename)
-
-        # Load images
-        corrupted = Image.open(corrupted_path).convert('L')
-        mask = Image.open(mask_path).convert('L')
-        tissue = Image.open(tissue_path).convert('L')
-        ct = Image.open(ct_path).convert('L')
-
-        # Read the vertebrae number from the .txt file
-        with open(vertebrae_path, 'r') as f:
-            vertebrae_num = int(f.read().strip())
-        # Normalize the vertebrae number to [0,1]
-        vertebrae_normalized = (vertebrae_num - 1) / (33 - 1)  # Assuming vertebrae numbers from 1 to 33
-
-        if self.transform:
-            corrupted = self.transform(corrupted)  # Shape: [1, H, W]
-            mask = self.transform(mask)
-            tissue = self.transform(tissue)
-            ct = self.transform(ct)
-            # Create vertebrae_tensor with same H and W
-            H, W = corrupted.shape[1], corrupted.shape[2]
-            vertebrae_tensor = torch.full((1, H, W), vertebrae_normalized)
-        else:
-            assert False, "Transform is required"
-
-        # Combine inputs into a single tensor
-        input_tensor = torch.cat([corrupted, mask, tissue, vertebrae_tensor], dim=0)  # Shape: [4, H, W]
-
-        return input_tensor, ct
 
 
 
