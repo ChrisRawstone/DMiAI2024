@@ -2,21 +2,28 @@ import gym
 from gym import spaces
 import numpy as np
 from time import time
-from collections import defaultdict
-from environment import TrafficSimulationEnvHandler  # Your environment handler
-
+from environment import TrafficSimulationEnvHandler, load_configuration  # Import TrafficSimulationEnvHandler and load_configuration
 
 class TrafficEnv(gym.Env):
-    def __init__(self, input_queue, output_queue, change_duration=15):
+    def __init__(self, input_queue, output_queue, config_file, change_duration=15, max_ticks=600):
         super(TrafficEnv, self).__init__()
         self.input_queue = input_queue
         self.output_queue = output_queue
         self.change_duration = change_duration
         self.last_action = None
         self.last_change_time = time()
+        self.simulation_ticks = 0  # Keep track of ticks
+        self.max_ticks = max_ticks  # Max ticks for the simulation
 
-        # Get the initial state
-        self.state = self._get_state_with_timeout()
+        # **Load the simulation configuration from the file**
+        self.configuration_file = config_file
+        self.simulation = self._load_simulation_configuration()  # Directly assign to self.simulation
+
+        # Debug: Check if the simulation has been properly initialized
+        print(f"[DEBUG] Simulation initialized with signal groups: {self.simulation.signal_groups}")
+
+        # Get the initial state from the simulation
+        self.state = self.simulation.get_observable_state()
 
         if self.state is None:
             raise RuntimeError("[ERROR] Could not receive initial state from simulation.")
@@ -32,25 +39,40 @@ class TrafficEnv(gym.Env):
             low=0, high=np.inf, shape=(len(self.signal_groups) * 2,), dtype=np.float32
         )
 
-    def _get_state_with_timeout(self, timeout=5):
-        try:
-            state = self.output_queue.get(timeout=timeout)
-            print(f"[STATE] Received state: {state}")
-            return state
-        except Exception as e:
-            print(f"[ERROR] Timeout or error while getting state: {e}")
-            return None
+    def _load_simulation_configuration(self):
+        """Load the configuration details from a YAML file."""
+        # Load the configuration details for the simulation
+        start_time = time()
+        test_duration_seconds = self.max_ticks
+
+        # Load the configuration file and return the initialized TrafficSimulationEnvHandler
+        simulation_env = load_configuration(self.configuration_file, start_time, test_duration_seconds)
+
+        if simulation_env is None:
+            raise RuntimeError("[ERROR] Failed to load simulation configuration.")
+        
+        # Set queues for input/output communication with the simulation
+        simulation_env.set_queues(self.input_queue, self.output_queue, None)  # Assuming error queue is not used here
+
+        return simulation_env
 
     def _initialize_actions(self):
         """Initializes the valid actions based on the allowed green signal combinations."""
         actions = []
-        for combo in self.state.allowed_green_signal_combinations:
-            actions.append(combo.groups)
+        
+        # Debug: Ensure that allowed_green_signal_combinations is correctly loaded
+        print(f"[DEBUG] Allowed Green Signal Combinations: {self.simulation.allowed_green_signal_combinations}")
+
+        # Iterate over the dictionary of allowed green signal combinations
+        for signal, allowed_groups in self.simulation.allowed_green_signal_combinations.items():
+            # Append the allowed groups as valid actions
+            actions.append(allowed_groups)
+        
         return actions
 
     def step(self, action):
-        """Execute the given action."""
-        current_tick = self.state.simulation_ticks
+        """Execute the given action and advance the simulation."""
+        current_tick = self.simulation_ticks
         ticks_since_last_change = current_tick - self.last_change_tick
 
         if self.last_action is None:
@@ -66,35 +88,58 @@ class TrafficEnv(gym.Env):
             for signal in selected_combination:
                 next_signals[signal] = 'green'
 
+            # Send the new signal states to the simulation
+            self.simulation.set_next_signals(next_signals)
+
             # Update current action and tick
             self.last_action = action
             self.last_change_tick = current_tick
 
-            # Send the new signal states
-            self.input_queue.put(next_signals)
+        # **Advance the SUMO simulation**
+        self.simulation._run_one_tick()
 
-        else:
-            # Replay last action
-            selected_combination = self.actions[self.last_action]
-            next_signals = {signal.name: 'red' for signal in self.state.signals}
-            for signal in selected_combination:
-                next_signals[signal] = 'green'
-            self.input_queue.put(next_signals)
+        # Get the next state after applying the action
+        self.state = self.simulation.get_observable_state()
 
-        # Get new state
-        self.state = self.output_queue.get()
-
-        # Extract new state and calculate reward
+        # Extract observation and calculate reward
         observation = self._extract_state(self.state)
         reward = self._calculate_reward(self.state)
 
-        # Check if simulation is done
-        done = self.state.is_terminated
+        # Update the simulation tick count
+        self.simulation_ticks += 1  
+
+        # Check if the environment has reached the maximum duration (max_ticks)
+        done = self.simulation_ticks >= self.max_ticks or self.state.is_terminated
 
         return observation, reward, done, {}
 
+    def reset(self):
+        """Reset the environment after map change or max ticks."""
+        print(f"[INFO] Resetting simulation...")
+
+        # Reset tick counter and simulation state
+        self.simulation_ticks = 0
+        self.last_change_tick = 0
+
+        # Reset the SUMO simulation via TrafficSimulationEnvHandler
+        self.simulation.reset_simulation()
+
+        # Get a fresh state from the simulation
+        self.state = self.simulation.get_observable_state()
+
+        if self.state is None:
+            raise RuntimeError("[ERROR] Could not receive initial state from simulation.")
+
+        # Update action and observation spaces based on new state
+        self.actions = self._initialize_actions()
+        self.observation_space = spaces.Box(
+            low=0, high=np.inf, shape=(len(self.signal_groups) * 2,), dtype=np.float32
+        )
+
+        return self._extract_state(self.state)
+
     def _extract_state(self, state_payload):
-        """Extract the observation (vehicle counts, stopped vehicles) from the payload."""
+        """Extracts the observation (vehicle counts, stopped vehicles) from the payload."""
         vehicle_counts = {leg: 0 for leg in self.signal_groups}
         stopped_vehicles = {leg: 0 for leg in self.signal_groups}
 
@@ -112,21 +157,6 @@ class TrafficEnv(gym.Env):
         return np.array(state_vector)
 
     def _calculate_reward(self, state_payload):
-        """Calculate reward based on vehicle delays."""
+        """Calculates the reward based on vehicle delays."""
         total_stopped_vehicles = sum(1 for vehicle in state_payload.vehicles if vehicle.speed < 1.0)
         return -total_stopped_vehicles
-
-    def reset(self):
-        """No reset, return to the same state to handle termination cleanly."""
-        print(f"[RESET] Reset requested, starting new simulation.")
-        self.last_change_tick = 0
-        self.state = self._get_state_with_timeout()
-
-        if self.state is None:
-            raise RuntimeError("[ERROR] Could not receive initial state from simulation.")
-
-        print(f"[RESET] Received new state after reset: {self.state}")
-        return self._extract_state(self.state)
-
-    def render(self, mode='human'):
-        pass

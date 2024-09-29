@@ -67,12 +67,15 @@ def load_configuration(configuration_file, start_time, test_duration_seconds):
     return None
 
 def load_and_run_simulation(configuration_file, start_time, test_duration_seconds, random_state, input_q, output_q, error_q):
+    print("[SIMULATION] Starting SUMO simulation process...")  # Add logging
     env = load_configuration(configuration_file, start_time, test_duration_seconds)
     env.set_queues(input_q, output_q, error_q)
 
     env.set_random_state(random_state)
     env.run_simulation()
+    print("[SIMULATION] SUMO simulation finished, sending observable state...")  # Add logging
     return env.get_observable_state()
+
 
 if 'SUMO_HOME' in os.environ:
     tools = os.path.join(os.environ['SUMO_HOME'], 'tools')
@@ -337,6 +340,36 @@ class TrafficSimulationEnvHandler:
             self._run_one_tick()
             sleep(sleep_time)
 
+            # Ensure state is sent to output_queue after each tick
+            if self._output_queue:
+                self._output_queue.put(self.observable_state)
+
         self._run_one_tick(terminates_now=True)
         self._traci_connection.close()
         self._simulation_is_running = False
+        print("[SIMULATION] SUMO simulation complete and closed.")  # Add logging
+
+    def reset_simulation(self):
+        """Resets the SUMO simulation by closing and restarting it."""
+        if self._traci_connection:
+            self._traci_connection.close()
+
+        # Restart the simulation
+        sumoBinary = checkBinary(sumo_version)
+        sim_instance = uuid4().hex
+
+        if self._random:
+            traci.start([sumoBinary, "--start", "--random", "--quit-on-end", "-c", (self._model_folder / "net.sumocfg").as_posix()], label=sim_instance)
+        else:
+            traci.start([sumoBinary, "--start", "--quit-on-end", "-c", (self._model_folder / "net.sumocfg").as_posix()], label=sim_instance)
+
+        self._traci_connection = traci.getConnection(sim_instance)
+        self.simulation_ticks = 0
+        self._total_score = 0
+        self.vehicle_waiting_time = {}
+
+        for _ in range(self.warm_up_ticks):
+            self._run_one_tick()
+
+        print("[SIMULATION] SUMO simulation restarted.")
+        return self.get_observable_state()
