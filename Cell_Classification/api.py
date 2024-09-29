@@ -46,7 +46,7 @@ def predict_endpoint(request: CellClassificationPredictRequestDto):
         if image is None:
             raise ValueError("Image decoding failed.")
 
-        # Ensure the image is in the correct format
+        # Ensure the image is in the correct format 
         if not isinstance(image, np.ndarray):
             raise TypeError("Decoded image is not a NumPy array.")
 

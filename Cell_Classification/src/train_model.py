@@ -1,15 +1,14 @@
 import os
 import pandas as pd
 import torch
-from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
+from torch.utils.data import Dataset, DataLoader
 from torchvision import models, transforms
 from PIL import Image
 import torch.nn as nn
 import torch.optim as optim
-from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
-import numpy as np
 
 # Custom Dataset class
 class CustomImageDataset(Dataset):
@@ -27,29 +26,54 @@ class CustomImageDataset(Dataset):
         img_id = str(self.annotations.iloc[index, 0]).zfill(self.id_length)
         img_path = os.path.join(self.root_dir, f"{img_id}.tif")
 
-        image = Image.open(img_path).convert("RGB")
+        # Open the image as greyscale and convert to RGB
+        image = Image.open(img_path).convert("L")  # Open as greyscale (L mode)
+        image = image.convert("RGB")  # Convert to 3-channel RGB for ResNet compatibility
+
         label = int(self.annotations.iloc[index, 1])  # Convert label to int (0 or 1)
 
         if self.transform:
             image = self.transform(image)
         return image, label, img_path  # Return the image path as well
 
+class FocalLoss(nn.Module):
+    def __init__(self, alpha=1, gamma=2, reduction='mean'):
+        super(FocalLoss, self).__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+        self.reduction = reduction
+
+    def forward(self, inputs, targets):
+        BCE_loss = nn.BCEWithLogitsLoss(reduction='none')(inputs, targets)
+        probs = torch.sigmoid(inputs)
+        BCE_loss = torch.where(targets == 1, BCE_loss * self.alpha, BCE_loss)
+        focal_loss = (1 - probs) ** self.gamma * BCE_loss
+
+        if self.reduction == 'mean':
+            return focal_loss.mean()
+        elif self.reduction == 'sum':
+            return focal_loss.sum()
+        else:
+            return focal_loss
+
+
 # Define the main function
 def main():
     # Hyperparameters
     num_epochs = 20
     batch_size = 4
-    learning_rate = 0.000001  # Increased learning rate
-    pos_weight = 1.0  # Increased pos_weight to give more weight to minority class
+    learning_rate = 1e-5  # Decreased learning rate for more stable training
+    plot_dir = "plots"
+    os.makedirs(plot_dir, exist_ok=True)
 
     # Check if GPU is available and move the model to GPU if possible
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Paths
-    data_dir = "data/training"
-    csv_path = "data/training.csv"
-    plot_dir = "plots"
-    os.makedirs(plot_dir, exist_ok=True)
+    train_dir = "data/training"
+    train_csv_path = "data/training.csv"
+    validation_dir = "data/validation"  # Same as in predict.py
+    val_csv_path = "data/validation.csv"  # Same as in predict.py
 
     # Image transformations
     transform = transforms.Compose([
@@ -59,61 +83,71 @@ def main():
     ])
 
     # Load annotations
-    annotations = pd.read_csv(csv_path)
+    train_annotations = pd.read_csv(train_csv_path)
+    val_annotations = pd.read_csv(val_csv_path)
 
-    # Split the dataset into training and validation sets
-    train_df, val_df = train_test_split(
-        annotations,
-        test_size=0.2,
-        stratify=annotations.iloc[:, 1],  # Stratify on the labels
-        random_state=42
-    )
+    # Verify labels
+    print("Unique labels in training set:", train_annotations.iloc[:, 1].unique())
+    print("Unique labels in validation set:", val_annotations.iloc[:, 1].unique())
 
     # Print number of labels in each class for training and validation sets
-    train_class_counts = train_df.iloc[:, 1].value_counts()
-    val_class_counts = val_df.iloc[:, 1].value_counts()
+    train_class_counts = train_annotations.iloc[:, 1].value_counts()
+    val_class_counts = val_annotations.iloc[:, 1].value_counts()
     print(f"\nTraining set class distribution:\n{train_class_counts}")
     print(f"\nValidation set class distribution:\n{val_class_counts}")
 
     # Create datasets
     train_dataset = CustomImageDataset(
-        annotations_df=train_df, root_dir=data_dir, transform=transform
+        annotations_df=train_annotations, root_dir=train_dir, transform=transform
     )
     val_dataset = CustomImageDataset(
-        annotations_df=val_df, root_dir=data_dir, transform=transform
+        annotations_df=val_annotations, root_dir=validation_dir, transform=transform
     )
 
-    # Create weighted sampler for training to handle class imbalance
-    class_sample_counts = train_df.iloc[:, 1].value_counts().tolist()
-    weights = 1.0 / torch.tensor(class_sample_counts, dtype=torch.float)
-    sample_weights = weights[train_df.iloc[:, 1].values]
-    train_sampler = WeightedRandomSampler(weights=sample_weights, num_samples=len(sample_weights), replacement=True)
-
-    # Create dataloaders
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, sampler=train_sampler)
+    # Create dataloaders without WeightedRandomSampler
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 
     # Load pre-trained ResNet50 model
-    model = models.resnet50(pretrained=True)
+    model = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)  # Updated for torchvision >=0.13
+
+    # Modify the first convolutional layer to accept single-channel (greyscale) images
+    model.conv1 = nn.Conv2d(3, model.conv1.out_channels, kernel_size=7, stride=2, padding=3, bias=False)
 
     # Modify the final fully connected layer for binary classification
     num_features = model.fc.in_features
     model.fc = nn.Linear(num_features, 1)  # Binary classification
 
+    # Initialize weights and biases of the final layer
+    nn.init.xavier_uniform_(model.fc.weight)
+    nn.init.zeros_(model.fc.bias)
+
+    # Calculate pos_weight
+    num_neg = train_class_counts[0]
+    num_pos = train_class_counts[1]
+    pos_weight_value = num_neg / num_pos
+    pos_weight = torch.tensor([pos_weight_value]).to(device)
+    print(f"Using pos_weight: {pos_weight.item():.4f}")
+
     # Define weighted loss
-    # Set a higher weight for minority class
-    criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([pos_weight]).to(device))
+    # criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+
+    # Alternatively, use Focal Loss
+    criterion = FocalLoss(alpha=pos_weight_value, gamma=2, reduction='mean')
 
     # Define optimizer
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+    optimizer = optim.SGD(model.parameters(), lr=learning_rate, momentum=0.4)
 
+    # Optionally, implement a learning rate scheduler
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=3, verbose=True)
 
     model = model.to(device)
-    # Add this before the training loop to track best performance
     best_combined_correct = 0
     best_epoch = -1
+    patience = 5
+    counter = 0
+    best_val_loss = float('inf')
 
-    # Training loop
     for epoch in range(num_epochs):
         model.train()
         running_loss = 0.0
@@ -128,21 +162,22 @@ def main():
             outputs = model(images)
             loss = criterion(outputs.squeeze(), labels)  # Squeeze for correct loss shape
 
-            # Backward pass and optimization
+            # Backward pass and optimization with gradient clipping
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
 
             running_loss += loss.item()
 
-        print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {running_loss/len(train_loader):.4f}")
+        avg_train_loss = running_loss / len(train_loader)
+        print(f"Epoch [{epoch+1}/{num_epochs}], Training Loss: {avg_train_loss:.4f}")
 
         # Validation
         model.eval()
         val_running_loss = 0.0
-        class_samples = {0: 0, 1: 0}  # To keep track of how many images we have per class
-        class_correct = {0: 0, 1: 0}  # To track number of correct predictions for each class
-        max_samples_per_class = 5  # Plot 5 images per class
-        images_to_plot = {0: [], 1: []}  # To store image paths per class
+        all_labels = []
+        all_preds = []
+        all_probs = []
 
         with torch.no_grad():
             for images, labels, img_paths in val_loader:
@@ -156,66 +191,40 @@ def main():
                 probs = torch.sigmoid(outputs.squeeze())
                 preds = (probs >= 0.5).long()
 
-                # Print out probabilities for debugging
-                print(f"Predicted probabilities: {probs.tolist()}")
+                all_labels.extend(labels.cpu().numpy())
+                all_preds.extend(preds.cpu().numpy())
+                all_probs.extend(probs.cpu().numpy())
 
-                # Count the number of correct predictions for each class
-                for i in range(images.size(0)):
-                    label = int(labels[i].item())
-                    pred = int(preds[i].item())
+        avg_val_loss = val_running_loss / len(val_loader)
+        accuracy = accuracy_score(all_labels, all_preds)
+        precision = precision_score(all_labels, all_preds, zero_division=0)
+        recall = recall_score(all_labels, all_preds, zero_division=0)
+        f1 = f1_score(all_labels, all_preds, zero_division=0)
+        roc_auc = roc_auc_score(all_labels, all_probs)
 
-                    # Check if the prediction is correct
-                    if pred == label:
-                        class_correct[label] += 1  # Increment correct counter for the class
+        print(f"Validation Loss: {avg_val_loss:.4f}")
+        print(f"Accuracy: {accuracy:.4f}")
+        print(f"Precision: {precision:.4f}")
+        print(f"Recall: {recall:.4f}")
+        print(f"F1-Score: {f1:.4f}")
+        print(f"ROC AUC: {roc_auc:.4f}")
 
-                    img_path = img_paths[i]  # Directly get image path from batch
+        # Update learning rate scheduler
+        scheduler.step(avg_val_loss)
 
-                    if class_samples[label] < max_samples_per_class:
-                        images_to_plot[label].append((img_path, label, pred))
-                        class_samples[label] += 1
-                    if class_samples[0] >= max_samples_per_class and class_samples[1] >= max_samples_per_class:
-                        break
-                if class_samples[0] >= max_samples_per_class and class_samples[1] >= max_samples_per_class:
-                    break
-
-        val_loss = val_running_loss / len(val_loader)
-        print(f"Validation Loss: {val_loss:.4f}")
-
-        # Print number of correct predictions for each class
-        print(f"Correct Predictions for Epoch {epoch+1}: Class 0: {class_correct[0]} / {val_class_counts[0]}, Class 1: {class_correct[1]} / {val_class_counts[1]}")
-
-        # Save the model if it has the best combined correct predictions and at least 1 correct from each class
-        combined_correct = class_correct[0] + class_correct[1]
-        if combined_correct > best_combined_correct and class_correct[0] > 0 and class_correct[1] > 0:
-            best_combined_correct = combined_correct
-            best_epoch = epoch + 1
+        # Early Stopping
+        if avg_val_loss < best_val_loss:
+            best_val_loss = avg_val_loss
+            counter = 0
             torch.save(model.state_dict(), "best_resnet50_homogeneity_detection.pth")
-            print(f"Saved best model at epoch {epoch+1} with {combined_correct} correct predictions")
+            print(f"Saved best model at epoch {epoch+1} with validation loss {avg_val_loss:.4f}")
+        else:
+            counter += 1
+            if counter >= patience:
+                print("Early stopping triggered.")
+                break
 
-        # Consolidate all images into one plot per epoch
-        fig, axes = plt.subplots(2, max_samples_per_class, figsize=(15, 6))
-        for idx, label in enumerate([0, 1]):
-            for jdx in range(max_samples_per_class):
-                if jdx < len(images_to_plot[label]):  # Check if we have enough samples
-                    img_path, true_label, pred_label = images_to_plot[label][jdx]
-
-                    # Use matplotlib.image to read and plot .tif images
-                    img = mpimg.imread(img_path)
-                    axes[idx, jdx].imshow(img)
-                    axes[idx, jdx].axis('off')
-                    axes[idx, jdx].set_title(f'True: {true_label}, Pred: {pred_label}')
-
-        # Adjust spacing to minimize white space
-        plt.subplots_adjust(left=0, right=1, top=0.95, bottom=0, hspace=0.1, wspace=0.1)
-
-        plt.suptitle(f'Epoch {epoch+1} Validation Results')
-        plt.tight_layout()
-
-        # Save the entire figure once per epoch with minimal white space
-        plt.savefig(os.path.join(plot_dir, f'epoch_{epoch+1}_validation_results.png'), bbox_inches='tight')
-        # plt.show()
-
-    print(f"Training completed. Best model saved at epoch {best_epoch} with {best_combined_correct} correct predictions.")
+    print(f"Training completed. Best model saved with validation loss {best_val_loss:.4f}.")
 
     # Save the trained model
     torch.save(model.state_dict(), "resnet50_homogeneity_detection.pth")
