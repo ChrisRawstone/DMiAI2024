@@ -11,6 +11,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
 from torchvision import transforms, models
+from torchvision.models import ViT_B_16_Weights  # Import the weights enum
 
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
@@ -295,31 +296,40 @@ def save_sample_images(dataset, num_samples=5, folder='plots', split='train'):
         plt.savefig(f'{folder}/{split}_sample_{i}.png')
         plt.close()
 
+# Uncomment the following lines if you want to save sample images
 # save_sample_images(train_dataset, split='train')
 # save_sample_images(val_dataset, split='val')
 
 logging.info("Sample images saved to 'plots' folder.")
 
 # ===============================
-# 9. Define the Model
+# 9. Define the Model (Using Vision Transformer)
 # ===============================
 
-def get_model(pretrained=True):
+def get_model():
     """
-    Initializes the EfficientNet_B4 model for binary classification.
-
-    Args:
-        pretrained (bool, optional): Whether to use ImageNet pretrained weights. Defaults to True.
+    Initializes the Vision Transformer (ViT) model for binary classification.
 
     Returns:
-        nn.Module: The modified EfficientNet_B4 model.
+        nn.Module: The modified ViT model.
     """
-    model = models.efficientnet_b4(pretrained=pretrained)
-    num_ftrs = model.classifier[1].in_features
-    model.classifier[1] = nn.Linear(num_ftrs, 1)  # Binary classification
+    # Initialize the Vision Transformer model with updated weights parameter
+    weights = ViT_B_16_Weights.DEFAULT  # Use the default pretrained weights
+    model = models.vit_b_16(weights=weights)
+    
+    # Check if model.heads is a Sequential or a single Linear layer
+    if isinstance(model.heads, nn.Sequential):
+        # Assuming the first layer is the Linear layer we want to modify
+        in_features = model.heads[0].in_features
+    else:
+        in_features = model.heads.in_features
+    
+    # Replace the classification head for binary classification
+    model.heads = nn.Linear(in_features, 1)
+    
     return model
 
-model = get_model(pretrained=True)
+model = get_model()
 model = model.to(device)
 
 # ===============================
@@ -411,7 +421,7 @@ for epoch in range(num_epochs):
 
         optimizer.zero_grad()
 
-        with torch.amp.autocast("cuda"):
+        with torch.cuda.amp.autocast():
             outputs = model(images)
             loss = criterion(outputs, labels)
 
@@ -445,7 +455,7 @@ for epoch in range(num_epochs):
             images = images.to(device, non_blocking=True)
             labels = labels.float().unsqueeze(1).to(device, non_blocking=True)
 
-            with torch.amp.autocast("cuda"):
+            with torch.cuda.amp.autocast():
                 outputs = model(images)
                 loss = criterion(outputs, labels)
 
@@ -463,7 +473,7 @@ for epoch in range(num_epochs):
 
     # Calculate accuracy
     preds_binary = (np.array(val_preds) > 0.5).astype(int)
-    val_acc = accuracy_score(val_targets, preds_binary)
+    val_acc = accuracy_score(val_targets, preds_binary) * 100  # Convert to percentage
 
     # Calculate custom score
     custom_score = calculate_custom_score(val_targets, preds_binary)
@@ -524,7 +534,7 @@ except ValueError:
 
 # Calculate accuracy
 preds_binary = (np.array(val_preds) > 0.5).astype(int)
-val_acc = accuracy_score(val_targets, preds_binary)
+val_acc = accuracy_score(val_targets, preds_binary) * 100  # Convert to percentage
 
 # Calculate custom score
 custom_score = calculate_custom_score(val_targets, preds_binary)
@@ -538,22 +548,3 @@ logging.info(f"Val Loss: {avg_val_loss:.4f} | Val AUC: {val_auc:.4f} | Val Acc: 
 
 torch.save(model.state_dict(), 'checkpoints/final_model.pth')
 logging.info("Final model saved as 'checkpoints/final_model.pth'.")
-
-# ===============================
-# 16. Optional: TensorBoard Logging
-# ===============================
-# Uncomment the following lines if you wish to use TensorBoard for logging.
-
-# from torch.utils.tensorboard import SummaryWriter
-# writer = SummaryWriter(log_dir='logs/tensorboard')
-
-# # Inside the training loop, add:
-# writer.add_scalar('Loss/Train', avg_train_loss, epoch)
-# writer.add_scalar('Loss/Val', avg_val_loss, epoch)
-# writer.add_scalar('AUC/Train', train_auc, epoch)
-# writer.add_scalar('AUC/Val', val_auc, epoch)
-# writer.add_scalar('Accuracy/Val', val_acc, epoch)
-# writer.add_scalar('Custom Score/Val', custom_score, epoch)
-
-# # After training
-# writer.close()
