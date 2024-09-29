@@ -6,8 +6,7 @@ from pathlib import Path
 import os
 import sys
 import pandas as pd
-
-
+import numpy as np
 from src.utils import tif_to_ndarray
 
 # Get the script's directory
@@ -24,122 +23,82 @@ class PadToSize:
         self.target_height = target_height
 
     def __call__(self, img):
-        """
-        Make PadToSize callable so it can be used inside transforms.Compose.
-        
-        Args:
-            img (PIL.Image): The image to pad.
-
-        Returns:
-            PIL.Image: Padded image.
-        """
+        # Get the current dimensions of the image
         width, height = img.size
-        
-        # Calculate padding required on each side
+
+        # Calculate padding on each side to center the image
         pad_width = max(0, (self.target_width - width) // 2)
         pad_height = max(0, (self.target_height - height) // 2)
-        
-        # Apply padding to the image
+
+        # Apply padding
         padding = (pad_width, pad_height, self.target_width - width - pad_width, self.target_height - height - pad_height)
-        padded_img = ImageOps.expand(img, padding)
-        
-        return padded_img
+        return ImageOps.expand(img, padding, fill=0) # Black padding
 
 class LoadTifDataset(Dataset):
-    def __init__(self, image_dir, csv_file_path, transform=None):
-        """
-        Custom Dataset for loading .tif images and their labels from a CSV file.
-
-        Args:
-            image_dir (str): Path to the folder containing .tif images.
-            csv_file_path (str): Path to the CSV file with image file names and labels.
-            transform (callable, optional): Optional transform to be applied on a sample.
-        """
+    def __init__(self, csv_file, image_dir, transform=None):
         self.image_dir = image_dir
-        #script_dir = os.path.dirname(os.path.realpath(__file__))
-        self.labels_df = pd.read_csv(csv_file_path)
+        self.labels_df = pd.read_csv(csv_file)
         self.transform = transform
 
     def __len__(self):
-        # Returns the total number of samples (rows) in the dataset
         return len(self.labels_df)
 
-    def load_data(self, idx):
-        """
-        Loads a single image and its label given an index.
-
-        Args:
-            idx (int): Index of the image in the CSV file.
-
-        Returns:
-            tuple: (image, label) where image is the loaded and optionally transformed image and
-                label is a tensor representing the image's label.
-        """
-        # Get the image file name and label from the CSV file
+    def __getitem__(self, idx):
         img_name = str(self.labels_df.iloc[idx, 0]).zfill(3)  # Zero-pad to 3 digits
-        label = self.labels_df.iloc[idx, 1]                   # Second column: label (0 or 1)
+        label = self.labels_df.iloc[idx, 1]  # Get the label (0 or 1)
         
         # Full path to the .tif image
         img_path = os.path.join(self.image_dir, f"{img_name}.tif")
         
-        # Load the .tif image using tif_to_ndarray
-        image = tif_to_ndarray(img_path)
+        # Open the image and convert to grayscale mode "L"
+        image = Image.open(img_path)     #.convert('L')  # Ensures image is 8-bit grayscale
         
-        # Check if the image was loaded correctly
-        if image is None:
-            raise ValueError(f"Failed to load image at path: {img_path}")
-        
-        # Convert ndarray to PIL Image for transformations
-        image = Image.fromarray(image)
+        # If image is 16-bit, convert it to 8-bit grayscale
+        if image.mode == 'I;16B':
+            # Convert 16-bit to 8-bit by scaling down
+            image = (np.array(image) / 256).astype(np.uint8)  # Scale pixel values to 8-bit
+            image = Image.fromarray(image)  # Convert back to PIL Image
+            image = image.convert('L')  # Ensure it's in 8-bit grayscale
+
+        # Ensure all images are in 8-bit grayscale mode
+        # else:
+        #     image = image.convert('L')
+
         image = image.convert('RGB')
         
-        # Apply the transformations, including padding
         if self.transform:
             image = self.transform(image)
         
         return image, torch.tensor(label, dtype=torch.long)
 
-    def __getitem__(self, idx):
-        """
-        PyTorch will call this method to get a single image-label pair during data loading.
+final_resize_size = (224, 224)
+train_transform = transforms.Compose([
+    transforms.Grayscale(num_output_channels=3),  # Convert grayscale to 3-channel RGB
+    #PadToSize(*target_size),  # Pad to the target size of the largest image
+    transforms.Resize(final_resize_size),  # Resize the shorter side first
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),  # ImageNet normalization
+])
 
-        Args:
-            idx (int): Index of the image in the dataset.
+val_transform = transforms.Compose([
+    transforms.Grayscale(num_output_channels=3),  # Convert grayscale to 3-channel RGB
+    #PadToSize(*target_size),  # Pad to the target size of the largest image
+    transforms.Resize(final_resize_size),  # Resize the shorter side first
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),  # Normalize as per ImageNet
+])
 
-        Returns:
-            tuple: (image, label) as returned by load_data function.
-        """
-        return self.load_data(idx)
+# # Paths to the CSV file and image directory
+# csv_file = '../data/training.csv'
+# image_dir = '../data/training/'
 
-# # Define the padding size
-# target_width = 1500
-# target_height = 1470
+# csv_file_val = '../data/validation.csv'
+# image_dir_val = '../data/validation/'
 
-# # Define transformations for training data
-# train_transform = transforms.Compose([
-#     PadToSize(target_width=target_width, target_height=target_height),
-#     transforms.Resize((224, 224)),
-#     transforms.RandomHorizontalFlip(),
-#     transforms.RandomRotation(15),
-#     transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
-#     transforms.Grayscale(num_output_channels=3),
-#     transforms.ToTensor(),
-# ])
+# # Create datasets
+# train_dataset = LoadTifDataset(csv_file=csv_file, image_dir=image_dir, transform=val_transform)
+# val_dataset = LoadTifDataset(csv_file=csv_file_val, image_dir=image_dir_val, transform=val_transform)
 
-# # Define transformations for validation data (no augmentation)
-# val_transform = transforms.Compose([
-#     PadToSize(target_width=target_width, target_height=target_height),
-#     transforms.Resize((224, 224)),
-#     transforms.Grayscale(num_output_channels=3),
-#     transforms.ToTensor(),
-# ])
-
-# Example usage
-# image_dir = "data/training"
-# csv_file_path = "data/training.csv"
-
-# # Create the dataset with padding transformation
-# dataset = LoadTifDataset(image_dir=image_dir, csv_file_path=csv_file_path, transform=transform)
-
-# # Create the dataloader for batch processing
-# dataloader = DataLoader(dataset, batch_size=16, shuffle=True)
+# # Create DataLoader objects
+# train_dataloader = DataLoader(train_dataset, batch_size=64, shuffle=True, num_workers=4)
+# val_dataloader = DataLoader(val_dataset, batch_size=64, shuffle=False, num_workers=4)
