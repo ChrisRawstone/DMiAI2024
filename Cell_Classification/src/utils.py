@@ -29,26 +29,7 @@ def decode_image(encoded_img: str) -> np.ndarray:
     except Exception as e:
         raise ValueError(f"Failed to decode image: {e}")
 
-def save_image_as_tif(image: np.ndarray, output_path: str) -> None:
-    """
-    Saves the provided image as a .tif file in 'I;16B' format.
 
-    Args:
-        image (np.ndarray): Image to be saved.
-        output_path (str): File path where the image should be saved.
-
-    Raises:
-        ValueError: If the image is not a valid NumPy array.
-    """
-    if not isinstance(image, np.ndarray):
-        raise ValueError("Input image is not a valid NumPy array.")
-
-    # Convert to PIL Image
-    # Ensure image is in grayscale before conversion
-    if len(image.shape) == 3:
-        image_gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    else:
-        image_gray = image
 
     # Convert NumPy array to PIL Image with mode 'I;16'
     pil_image = Image.fromarray(image_gray.astype(np.uint16), mode='I;16')

@@ -4,16 +4,21 @@ import uvicorn
 from fastapi import FastAPI, HTTPException
 import datetime
 import time
-from src.models.model import predict
+
 from loguru import logger
 from pydantic import BaseModel
 from typing import List
-from src.utils import load_sample, save_image_as_tif
+from src.utils import load_sample
+from src.data.make_dataset import save_image_as_tif
 import numpy as np
 import os
+import random
 
 HOST = "0.0.0.0"
 PORT = 9090
+
+global counter
+counter = 0
 
 # Define the request and response schemas
 class CellClassificationPredictRequestDto(BaseModel):
@@ -39,29 +44,34 @@ def index():
 
 @app.post('/predict', response_model=CellClassificationPredictResponseDto)
 def predict_endpoint(request: CellClassificationPredictRequestDto):
+    global counter
     try:
         # Decode and load the image
-        sample = load_sample(request.cell)
-        image = sample.get("image")
+        encoded_image = request.cell
+        # image = sample.get("image")
         
-        if image is None:
-            raise ValueError("Image decoding failed.")
+        # if image is None:
+        #     raise ValueError("Image decoding failed.")
 
-        # Ensure the image is in the correct format 
-        if not isinstance(image, np.ndarray):
-            raise TypeError("Decoded image is not a NumPy array.")
+        # # Ensure the image is in the correct format 
+        # if not isinstance(image, np.ndarray):
+        #     raise TypeError("Decoded image is not a NumPy array.")
         
+        counter += 1
         # Save the image as a 16-bit .tif file
-        save_path = os.path.join("data/saved_images", f"image_{int(time.time())}.tif")
-        save_image_as_tif(image, save_path)
-        logger.info(f"Image saved at {save_path}")
+        save_path = os.path.join("", f"{counter}".zfill(3)+".tif")
+        save_image_as_tif(encoded_image, save_path)
+
 
         # Make prediction by passing the image array
-        predicted_homogenous_state = predict(image)
+        # predicted_homogenous_state = predict(image)
+        is_homogenous = random.randint(0, 1)
+
+        # predicted_homogenous_state = 1
         
         # Return the prediction
         response = CellClassificationPredictResponseDto(
-            is_homogenous=predicted_homogenous_state
+            is_homogenous=is_homogenous
         )
         
         return response
