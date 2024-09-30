@@ -69,6 +69,11 @@ def main():
     # model_checkpoint = 'checkpoints/final_model_final.pth'
     # model_info = 'checkpoints/final_model_info_final.json'
 
+
+    ### new configurants
+    model_info =     "checkpoints/final_models/final_model_1_info.json"
+    model_checkpoint = "checkpoints/final_models/final_model_1_score_0.4605.pth"
+
     # Display the configuration being used
     print("Evaluation Configuration:")
     print(f"Image Directory : {args.image_dir}")

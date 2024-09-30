@@ -38,7 +38,7 @@ from tqdm import tqdm
 import optuna
 
 from src.utils import calculate_custom_score
-from src.train_utils import FocalLoss
+from src.train_utils import FocalLoss, set_seed, save_sample_images
 
 # ===============================
 # 1. Important Parameters and Configuration
@@ -80,14 +80,6 @@ AMP_DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 # ===============================
 # 2. Setup and Configuration
 # ===============================
-
-def set_seed(seed=SEED):
-    """Set random seeds for reproducibility."""
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
 
 set_seed(SEED)
 
@@ -217,37 +209,6 @@ def get_dataloaders(
 
     return train_loader, val_loader, original_val_loader
 
-def save_sample_images(dataset, num_samples=5, folder="plots", split="train"):
-    """
-    Saves a few sample images from the dataset to verify correctness.
-
-    Args:
-        dataset (CustomDataset): The dataset to sample from.
-        num_samples (int, optional): Number of samples to save. Defaults to 5.
-        folder (str, optional): Directory to save images. Defaults to 'plots'.
-        split (str, optional): Dataset split name ('train' or 'val'). Defaults to 'train'.
-    """
-    os.makedirs(folder, exist_ok=True)
-    for i in range(num_samples):
-        image, label = dataset[i]
-        image_np = image.permute(1, 2, 0).cpu().numpy()
-        image_np = (
-            image_np * np.array([0.229, 0.229, 0.229])
-        ) + np.array([0.485, 0.485, 0.485])  # Unnormalize
-        image_np = np.clip(image_np, 0, 1)
-        plt.imshow(image_np)
-        plt.title(f"{split.capitalize()} Label: {label}")
-        plt.axis("off")
-        plt.savefig(f"{folder}/{split}_sample_{i}.png")
-        plt.close()
-
-# Uncomment the following lines if you want to save sample images
-# train_loader_temp, val_loader_temp, original_val_loader_temp = get_dataloaders(batch_size=1, img_size=224)
-# save_sample_images(train_loader_temp.dataset, split='train')
-# save_sample_images(val_loader_temp.dataset, split='val')
-# save_sample_images(original_val_loader_temp.dataset, split='original_val')
-
-# logging.info("Sample images saved to 'plots' folder.")
 
 # ===============================
 # 5. Define Models Dictionary
@@ -330,10 +291,8 @@ def get_models(model_name, num_classes=1):
     return model
 
 
-
-
 # ===============================
-# 7. Hyperparameter Tuning with Optuna
+# 6. Hyperparameter Tuning with Optuna
 # ===============================
 
 def get_model_parallel(model):
@@ -357,7 +316,7 @@ def get_model_parallel(model):
 TOP_K = 3
 top_models = []
 
-def update_top_models(model_state_dict, custom_score, trial_number, fold_number):
+def update_top_models(model_state_dict, custom_score, trial_number, fold_number, model_name, img_size):
     """
     Updates the global top_models list with the new model if it is among the top_k.
 
@@ -366,6 +325,8 @@ def update_top_models(model_state_dict, custom_score, trial_number, fold_number)
         custom_score (float): The custom score of the model.
         trial_number (int): The trial number from Optuna.
         fold_number (int): The fold number in cross-validation.
+        model_name (str): Name of the model architecture.
+        img_size (int): Image size used during training.
     """
     global top_models
     if len(top_models) < TOP_K:
@@ -375,6 +336,8 @@ def update_top_models(model_state_dict, custom_score, trial_number, fold_number)
                 "state_dict": model_state_dict,
                 "trial": trial_number,
                 "fold": fold_number,
+                "model_name": model_name,
+                "img_size": img_size,
             }
         )
         top_models = sorted(top_models, key=lambda x: x["score"], reverse=True)
@@ -385,6 +348,8 @@ def update_top_models(model_state_dict, custom_score, trial_number, fold_number)
                 "state_dict": model_state_dict,
                 "trial": trial_number,
                 "fold": fold_number,
+                "model_name": model_name,
+                "img_size": img_size,
             }
             top_models = sorted(top_models, key=lambda x: x["score"], reverse=True)
 
@@ -582,6 +547,8 @@ def objective(trial):
                     custom_score=custom_score,
                     trial_number=trial.number,
                     fold_number=fold +1,
+                    model_name=model_name,      # Pass model_name
+                    img_size=img_size,          # Pass img_size
                 )
 
         fold_scores.append(best_fold_score)
@@ -594,7 +561,7 @@ def objective(trial):
     return avg_score
 
 # ===============================
-# 8. Run Optuna Study
+# 7. Run Optuna Study
 # ===============================
 
 # To utilize multiple GPUs, Optuna's study should run in a single process.
@@ -612,7 +579,7 @@ for key, value in best_trial.params.items():
     logging.info(f"    {key}: {value}")
 
 # ===============================
-# 9. Save Top 3 Models
+# 8. Save Top 3 Models
 # ===============================
 
 def save_top_models(top_models):
@@ -633,6 +600,8 @@ def save_top_models(top_models):
             "score": model["score"],
             "trial": model["trial"],
             "fold": model["fold"],
+            "model_name": model["model_name"],
+            "img_size": model["img_size"],
             "path": f"checkpoints/top_models/best_model_{idx +1}_score_{model['score']:.4f}_trial_{model['trial']}_fold_{model['fold']}.pth",
         }
         for idx, model in enumerate(top_models)
@@ -645,7 +614,7 @@ def save_top_models(top_models):
 save_top_models(top_models)
 
 # ===============================
-# 10. Train Top 3 Models on Full Training Data and Validate
+# 9. Train Top 3 Models on Full Training Data and Validate
 # ===============================
 
 def train_and_validate_top_models(top_models, num_epochs=NUM_EPOCHS):
@@ -661,14 +630,15 @@ def train_and_validate_top_models(top_models, num_epochs=NUM_EPOCHS):
         model_score = model_info["score"]
         trial_number = model_info["trial"]
         fold_number = model_info["fold"]
-        model_state_dict = model_info["state_dict"]
+        model_name = model_info["model_name"]
+        img_size = model_info["img_size"]
+        state_dict = model_info["state_dict"]
 
         # Retrieve hyperparameters from the study
         trial = study.trials[trial_number]
         params = trial.params
 
-        model_name = params.get("model_name", "ResNet50")  # Default to ResNet50 if not found
-        img_size = params.get("img_size", 224)
+        # Extract hyperparameters with defaults
         batch_size = params.get("batch_size", 32)
         lr = params.get("lr", 1e-4)
         weight_decay = params.get("weight_decay", 1e-4)
@@ -687,7 +657,7 @@ def train_and_validate_top_models(top_models, num_epochs=NUM_EPOCHS):
         model = model.to(DEVICE)
 
         # Load the state_dict
-        model.load_state_dict(model_state_dict)
+        model.load_state_dict(state_dict)
 
         # Define loss, optimizer, scheduler
         criterion = FocalLoss(alpha=alpha, gamma=gamma, logits=True).to(DEVICE)
@@ -706,6 +676,7 @@ def train_and_validate_top_models(top_models, num_epochs=NUM_EPOCHS):
 
         best_model_score = 0
         best_model_path = f"checkpoints/final_models/final_model_{idx +1}_score_{model_score:.4f}.pth"
+        best_model_info_path = f"checkpoints/final_models/final_model_{idx +1}_info.json"
 
         for epoch in range(num_epochs):
             logging.info(f"Top Model {idx +1} - Epoch {epoch +1}/{num_epochs}")
@@ -791,6 +762,19 @@ def train_and_validate_top_models(top_models, num_epochs=NUM_EPOCHS):
                     f"Top Model {idx +1} Epoch {epoch +1}: New best model saved with Custom Score: {custom_score:.4f}"
                 )
 
+                # Save the model's info to a JSON file
+                final_model_info = {
+                    "model_name": model_name,
+                    "img_size": img_size,
+                    "score": custom_score,
+                    "trial": trial_number,
+                    "fold": fold_number,
+                    "final_model_path": best_model_path,
+                }
+                with open(best_model_info_path, "w") as f:
+                    json.dump(final_model_info, f, indent=4)
+                logging.info(f"Saved Final Model Info {idx +1}: {best_model_info_path}")
+
         logging.info(
             f"Top Model {idx +1} Training Completed. Best Custom Score: {best_model_score:.4f}"
         )
@@ -799,12 +783,47 @@ def train_and_validate_top_models(top_models, num_epochs=NUM_EPOCHS):
 train_and_validate_top_models(top_models, num_epochs=NUM_EPOCHS)
 
 # ===============================
-# 11. Save Final Models Information
+# 10. Save Final Models Information
 # ===============================
 
 def save_final_models_info(top_models):
     """
-    Saves the final models information to a JSON file in the final_models directory.
+    Saves the final models information to individual JSON files in the final_models directory.
+
+    Args:
+        top_models (list): List of top model dictionaries.
+    """
+    for idx, model_info in enumerate(top_models):
+        final_model_path = f"checkpoints/final_models/final_model_{idx +1}_score_{model_info['score']:.4f}.pth"
+        final_model_info = {
+            "model_name": model_info["model_name"],
+            "img_size": model_info["img_size"],
+            "score": model_info["score"],
+            "trial": model_info["trial"],
+            "fold": model_info["fold"],
+            "final_model_path": final_model_path,
+        }
+
+        # Save the model's state_dict
+        torch.save(model_info["state_dict"], final_model_path)
+        logging.info(f"Saved Final Model {idx +1}: {final_model_path}")
+
+        # Save the model's info to a JSON file
+        info_path = f"checkpoints/final_models/final_model_{idx +1}_info.json"
+        with open(info_path, "w") as f:
+            json.dump(final_model_info, f, indent=4)
+        logging.info(f"Saved Final Model Info {idx +1}: {info_path}")
+
+# Save the final models information
+save_final_models_info(top_models)
+
+# ===============================
+# 11. Save Final Models Information (Alternative Consolidated)
+# ===============================
+
+def save_final_models_info_consolidated(top_models):
+    """
+    Saves the final models information to a single JSON file in the final_models directory.
 
     Args:
         top_models (list): List of top model dictionaries.
@@ -812,21 +831,39 @@ def save_final_models_info(top_models):
     final_models_info = []
     for idx, model_info in enumerate(top_models):
         final_model_path = f"checkpoints/final_models/final_model_{idx +1}_score_{model_info['score']:.4f}.pth"
-        final_models_info.append(
-            {
-                "final_model_path": final_model_path,
-                "score": model_info["score"],
-                "trial": model_info["trial"],
-                "fold": model_info["fold"],
-                "model_type": model_info["fold"]
-            }
-        )
-    with open("checkpoints/final_models/final_models_info.json", "w") as f:
-        json.dump(final_models_info, f, indent=4)
-    logging.info("Final models information saved to 'checkpoints/final_models/final_models_info.json'.")
+        info_path = f"checkpoints/final_models/final_model_{idx +1}_info.json"
 
-# Save the final models information
-save_final_models_info(top_models)
+        # Save the model's state_dict
+        torch.save(model_info["state_dict"], final_model_path)
+        logging.info(f"Saved Final Model {idx +1}: {final_model_path}")
+
+        # Prepare the model's info
+        model_details = {
+            "model_name": model_info["model_name"],
+            "img_size": model_info["img_size"],
+            "score": model_info["score"],
+            "trial": model_info["trial"],
+            "fold": model_info["fold"],
+            "final_model_path": final_model_path,
+            "info_path": info_path,
+        }
+
+        # Save the model's info to an individual JSON file
+        with open(info_path, "w") as f:
+            json.dump(model_details, f, indent=4)
+        logging.info(f"Saved Final Model Info {idx +1}: {info_path}")
+
+        # Append to the consolidated list
+        final_models_info.append(model_details)
+
+    # Save the consolidated info
+    consolidated_info_path = "checkpoints/final_models/final_models_consolidated_info.json"
+    with open(consolidated_info_path, "w") as f:
+        json.dump(final_models_info, f, indent=4)
+    logging.info(f"Saved Consolidated Final Models Info: {consolidated_info_path}")
+
+# Optionally, uncomment the following line to save a consolidated JSON file
+# save_final_models_info_consolidated(top_models)
 
 # ===============================
 # 12. Final Remarks
@@ -836,3 +873,47 @@ logging.info("Training and Hyperparameter Tuning Completed.")
 logging.info("Top 3 models have been saved in 'checkpoints/top_models/' directory.")
 logging.info("Final models trained on the full training data have been saved in 'checkpoints/final_models/' directory.")
 logging.info("All model information has been saved in the respective JSON files.")
+
+# ===============================
+# 13. Model Loading Function
+# ===============================
+
+def load_model(checkpoint_path, model_info_path, device):
+    """
+    Loads the model architecture and weights.
+
+    Args:
+        checkpoint_path (str): Path to the model weights.
+        model_info_path (str): Path to the model architecture info JSON.
+        device (torch.device): Device to load the model on.
+
+    Returns:
+        tuple: (model, img_size, model_info)
+    """
+    with open(model_info_path, 'r') as f:
+        model_info = json.load(f)
+    
+    model_name = model_info['model_name']
+    img_size = model_info['img_size']
+
+    model = get_models(model_name, num_classes=1)
+    state_dict = torch.load(checkpoint_path, map_location=device)
+    model.load_state_dict(state_dict)
+    model.to(device)
+    model.eval()
+    return model, img_size, model_info
+
+# ===============================
+# 14. Example Usage of load_model
+# ===============================
+
+# Example usage (uncomment and modify the paths as needed):
+# checkpoint_path = "checkpoints/final_models/final_model_1_score_0.9500.pth"
+# model_info_path = "checkpoints/final_models/final_model_1_info.json"
+
+# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# model, img_size, model_info = load_model(checkpoint_path, model_info_path, device)
+
+# Now, `model` is ready for inference or further training
+

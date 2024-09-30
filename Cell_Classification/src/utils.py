@@ -12,6 +12,18 @@ from PIL import Image
 from skimage.feature import hog
 import random
 
+from torchvision.models import (
+    ViT_B_32_Weights,
+    ResNet18_Weights,
+    ViT_B_16_Weights,
+    ResNet50_Weights,
+    ResNet101_Weights,
+    EfficientNet_B0_Weights,
+    EfficientNet_B4_Weights,
+    MobileNet_V3_Large_Weights,
+    Swin_V2_B_Weights,  # Added Swin V2 B Weights
+)
+
 # Set the desired image size (e.g., 128x128) for resizing
 IMAGE_SIZE = (224, 224)
 
@@ -84,33 +96,80 @@ def get_model(model_name, num_classes=1):
     Returns:
         nn.Module: The constructed model.
     """
-    if model_name == 'ViT':
-        from torchvision.models import vit_b_16, ViT_B_16_Weights
+    """
+    Returns a specific model based on the model_name.
+
+    Args:
+        model_name (str): Name of the model to retrieve.
+        num_classes (int, optional): Number of output classes. Defaults to 1.
+
+    Returns:
+        nn.Module: The specified model.
+    """
+    if model_name == "ViT16":
         vit_weights = ViT_B_16_Weights.DEFAULT
-        model = vit_b_16(weights=vit_weights)
+        model = models.vit_b_16(weights=vit_weights)
         in_features = model.heads.head.in_features
         model.heads.head = nn.Linear(in_features, num_classes)
-    elif model_name == 'ResNet50':
-        from torchvision.models import resnet50, ResNet50_Weights
-        resnet_weights = ResNet50_Weights.DEFAULT
-        model = resnet50(weights=resnet_weights)
+
+    elif model_name == "ViT32":
+        vit_weights32 = ViT_B_32_Weights.DEFAULT
+        model = models.vit_b_32(weights=vit_weights32)
+        in_features = model.heads.head.in_features
+        model.heads.head = nn.Linear(in_features, num_classes)
+
+    elif model_name == "ResNet18":
+        resnet18_weights = ResNet18_Weights.DEFAULT
+        model = models.resnet18(weights=resnet18_weights)
         in_features = model.fc.in_features
         model.fc = nn.Linear(in_features, num_classes)
-    elif model_name == 'EfficientNet':
-        from torchvision.models import efficientnet_b0, EfficientNet_B0_Weights
-        effnet_weights = EfficientNet_B0_Weights.DEFAULT
-        model = efficientnet_b0(weights=effnet_weights)
+
+    elif model_name == "ResNet50":
+        resnet50_weights = ResNet50_Weights.DEFAULT
+        model = models.resnet50(weights=resnet50_weights)
+        in_features = model.fc.in_features
+        model.fc = nn.Linear(in_features, num_classes)
+
+    elif model_name == "ResNet101":
+        resnet101_weights = ResNet101_Weights.DEFAULT
+        model = models.resnet101(weights=resnet101_weights)
+        in_features = model.fc.in_features
+        model.fc = nn.Linear(in_features, num_classes)
+
+    elif model_name == "EfficientNetB0":
+        efficientnet_b0_weights = EfficientNet_B0_Weights.DEFAULT
+        model = models.efficientnet_b0(weights=efficientnet_b0_weights)
         in_features = model.classifier[1].in_features
         model.classifier[1] = nn.Linear(in_features, num_classes)
-    elif model_name == 'MobileNetV3':
-        from torchvision.models import mobilenet_v3_large, MobileNet_V3_Large_Weights
-        mobilenet_weights = MobileNet_V3_Large_Weights.DEFAULT
-        model = mobilenet_v3_large(weights=mobilenet_weights)
+
+    elif model_name == "EfficientNetB4":
+        efficientnet_b4_weights = EfficientNet_B4_Weights.DEFAULT
+        model = models.efficientnet_b4(weights=efficientnet_b4_weights)
+        in_features = model.classifier[1].in_features
+        model.classifier[1] = nn.Linear(in_features, num_classes)
+
+    elif model_name == "MobileNetV3":
+        mobilenet_v3_weights = MobileNet_V3_Large_Weights.DEFAULT
+        model = models.mobilenet_v3_large(weights=mobilenet_v3_weights)
         in_features = model.classifier[3].in_features
         model.classifier[3] = nn.Linear(in_features, num_classes)
+
+    elif model_name == "DenseNet121":
+        densenet_weights = models.DenseNet121_Weights.DEFAULT
+        model = models.densenet121(weights=densenet_weights)
+        in_features = model.classifier.in_features
+        model.classifier = nn.Linear(in_features, num_classes)
+
+    elif model_name == "SwinV2B":  # Added SwinV2B
+        swin_v2_b_weights = Swin_V2_B_Weights.DEFAULT
+        model = models.swin_v2_b(weights=swin_v2_b_weights)
+        in_features = model.head.in_features
+        model.head = nn.Linear(in_features, num_classes)
+
     else:
-        raise ValueError(f"Unsupported model architecture: {model_name}")
+        raise ValueError(f"Model {model_name} is not supported.")
     return model
+
 
 def load_model(checkpoint_path, model_info_path, device):
     """
