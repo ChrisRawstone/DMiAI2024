@@ -4,8 +4,7 @@ import base64
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from datetime import datetime
-
+import json
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -16,16 +15,17 @@ from torchvision.models import ViT_B_16_Weights
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 
-from sklearn.metrics import accuracy_score, roc_auc_score
-from tqdm import tqdm
-from PIL import Image
+import random
+import logging
 
+from sklearn.metrics import accuracy_score
+from tqdm import tqdm
 import random
 import logging
 
 # Optuna for hyperparameter tuning
 import optuna
-import json
+
 
 # ===============================
 # 1. Setup and Configuration
@@ -46,6 +46,24 @@ num_gpus = torch.cuda.device_count()
 logging.info(f"Number of GPUs available: {num_gpus}")
 
 # Create necessary directories
+os.makedirs('plots', exist_ok=True)
+os.makedirs('checkpoints', exist_ok=True)
+os.makedirs('logs', exist_ok=True)
+
+# Setup logging
+logging.basicConfig(
+    filename='logs/training.log',
+    level=logging.INFO,
+    format='%(asctime)s %(levelname)s %(message)s',
+)
+console = logging.StreamHandler()
+console.setLevel(logging.INFO)
+formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
+console.setFormatter(formatter)
+logging.getLogger('').addHandler(console)
+
+
+# Create directories
 os.makedirs('plots', exist_ok=True)
 os.makedirs('checkpoints', exist_ok=True)
 os.makedirs('logs', exist_ok=True)
@@ -97,53 +115,6 @@ def calculate_custom_score(y_true, y_pred):
 
     score = (a0 * a1) / (n0 * n1)
     return score
-
-# ===============================
-# 3. Data Decoding Functions
-# ===============================
-
-import albumentations as A
-from albumentations.pytorch import ToTensorV2
-
-from sklearn.metrics import accuracy_score, roc_auc_score
-from tqdm import tqdm
-from PIL import Image
-
-import random
-import logging
-
-# ===============================
-# 1. Setup and Configuration
-# ===============================
-
-# Set random seeds for reproducibility
-def set_seed(seed=42):
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-
-set_seed(42)
-
-# Define device
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-# Create directories
-os.makedirs('plots', exist_ok=True)
-os.makedirs('checkpoints', exist_ok=True)
-os.makedirs('logs', exist_ok=True)
-
-# Setup logging
-logging.basicConfig(
-    filename='logs/training.log',
-    level=logging.INFO,
-    format='%(asctime)s %(levelname)s %(message)s',
-)
-console = logging.StreamHandler()
-console.setLevel(logging.INFO)
-formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
-console.setFormatter(formatter)
-logging.getLogger('').addHandler(console)
 
 # ===============================
 # 2. Data Decoding Functions
