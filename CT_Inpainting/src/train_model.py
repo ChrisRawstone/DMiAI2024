@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt  # Import matplotlib for visualization
 import numpy as np
 from src.models.model import UNet, VGG19Features, PerceptualLoss
 from data.data_set_classes import BaseClass
+from src.data.data_set_augmentations import flipMaskAug
 import datetime
 from omegaconf import DictConfig, OmegaConf
 import hydra
@@ -32,6 +33,7 @@ def train(cfg: DictConfig):
     batch_size = cfg.training_params.batch_size
     vgg_layers = cfg.training_params.vgg_layers
     perceptual_loss_weight = cfg.training_params.perceptual_loss_weight
+    train_size_proportion = cfg.training_params.train_size
 
     # Set the seed for reproducibility
     torch.manual_seed(seed)
@@ -65,6 +67,11 @@ def train(cfg: DictConfig):
             "learning_rate": learning_rate,
             "epochs": num_epochs,
             "batch_size": batch_size,
+            "vgg_layers": vgg_layers,
+            "perceptual_loss_weight": perceptual_loss_weight,
+            "seed": seed,
+            "debug": debug,
+            "model": "UNet",
             "architecture": "UNet",
             "dataset": "CT Inpainting",
             
@@ -82,14 +89,19 @@ def train(cfg: DictConfig):
 
     # Prepare the dataset and dataloaders
     dataset = BaseClass(data_dir=data_dir, transform=transform)
+    
+
+    # split the dataset into training and validation sets usng our custom split_data method
+    train_dataset,val_dataset =dataset.split_data(output_dir, train_size=train_size_proportion, val_size=1-train_size_proportion, seed=seed, augmentations=[flipMaskAug()])
+    #augmented_dataset = AugmentedDataset(dataset, transform)
 
     # Split dataset into training and validation sets
-    train_size = int(cfg.training_params.train_size * len(dataset))
+    train_size = int(train_size_proportion * len(train_dataset))
     val_size = len(dataset) - train_size
 
     # set seed for reproducibility when splitting the dataset
-    torch.manual_seed(seed)    
-    train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
+    #torch.manual_seed(seed)    
+    #train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
 
     # if true, use small dataset for testing/debug
     if debug:
@@ -101,6 +113,7 @@ def train(cfg: DictConfig):
        
     #timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     # Training loop with progress bars and W&B logging
+    best_val_loss = float('inf')
     for epoch in range(num_epochs):
         print(f'Epoch {epoch+1}/{num_epochs}')
         
@@ -129,6 +142,7 @@ def train(cfg: DictConfig):
                     perceptual_loss = perceptual_loss_fn(outputs_for_perceptual_loss, labels_for_perceptual_loss)
                     # combine the two losses
                     total_loss = l1_loss + perceptual_loss_weight * perceptual_loss
+                    print(f"l1_loss: {l1_loss.item()}, perceptual_loss: {perceptual_loss.item()}")
                 else:
                     total_loss = l1_loss
 
@@ -216,6 +230,12 @@ def train(cfg: DictConfig):
                         plt.close(fig)
 
         val_loss = val_loss / val_size
+
+        # Save the model with the best validation loss
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            #torch.save(model.state_dict(), 'models/best_ct_inpainting_unet.pth')
+            torch.save(model.state_dict(), f'{output_dir}/best_ct_inpainting_unet.pth')        
 
         # Log the validation loss to W&B
         wandb.log({"epoch": epoch + 1, "val_loss": val_loss})

@@ -39,4 +39,4 @@
 module load cuda/11.1
 source CT_Inpainting/CT_venv/bin/activate
 
-python CT_Inpainting/src/train_model.py training_params.perceptual_loss_weight=0.01
+python CT_Inpainting/src/train_model.py training_params.loss_functions=['l1'] training_params.num_epochs=250

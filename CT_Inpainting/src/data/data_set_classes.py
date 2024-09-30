@@ -10,7 +10,9 @@ from tqdm import tqdm  # Import tqdm for progress bars
 import matplotlib.pyplot as plt  # Import matplotlib for visualization
 import numpy as np
 from src.models.model import UNet
+from src.data.data_set_augmentations import flipMaskAug
 import datetime
+import shutil
 
 
 
@@ -32,7 +34,12 @@ class BaseClass(Dataset):
         self.transform = transform
     
     def get_stripped_filename(self, filenames):
-        return [filename.split('_')[1] + "_" + filename.split('_')[2].split('.')[0] for filename in filenames]     
+        # check if filenames are in the format corrupted_000_1.png or just corrupted_0.png
+        if len(filenames[0].split('_')) == 3:
+
+            return [filename.split('_')[1] + "_" + filename.split('_')[2].split('.')[0] for filename in filenames]     
+        else:
+            return [filename.split('_')[1].split('.')[0] for filename in filenames]
 
     def __len__(self):
         return len(self.identifers)
@@ -74,6 +81,118 @@ class BaseClass(Dataset):
         
         return input_tensor, output_tensor
  
+    def split_data(self,hydra_output_dir, train_size=0.8, val_size=0.2,augmentations = [], seed=None):
+        """
+        Split the data into training and validation sets
+        Creates a new folder in the hydra output directory with the split data
+        Returns two new instances of the BaseClass class with the split data        
+        """        
+        assert seed is not None, "Seed is required"
+        np.random.seed(seed)
+        # Shuffle the identifiers
+        np.random.shuffle(self.identifers)
+        # Split the identifiers
+        train_size = int(len(self.identifers) * train_size)
+        val_size = len(self.identifers) - train_size
+        train_identifiers = self.identifers[:train_size]
+        val_identifiers = self.identifers[train_size:]
+
+        # save the validation data
+        val_data_dir = os.path.join(hydra_output_dir, 'val_data')
+        os.makedirs(val_data_dir, exist_ok=True)
+        # make subdirectories for each type of data
+
+        for identifier in val_identifiers:
+            for dir in self.dirs:
+                # make the subdirectories
+                sub_dir = os.path.join(val_data_dir, dir)                
+                os.makedirs(os.path.join(val_data_dir, dir), exist_ok=True)
+
+                if dir == 'vertebrae':
+                    filename = dir + '_' + identifier + '.txt'
+                else:
+                    filename = dir + '_' + identifier + '.png'
+
+                src_path = os.path.join(getattr(self, dir + '_dir'), filename)
+                dst_path = os.path.join(sub_dir, filename)
+                shutil.copy(src_path, dst_path)
+
+        # save the training data (potentially augmented)
+        train_data_dir = os.path.join(hydra_output_dir, 'train_data')
+        os.makedirs(train_data_dir, exist_ok=True)
+        
+        if augmentations:
+            new_identifer = 0
+            for identifier in train_identifiers:
+                path_to_files = {f"{dir}_path": os.path.join(getattr(self, dir + '_dir'),dir + "_" + identifier + ".png") for dir in self.dirs}
+                if 'vertebrae' in self.dirs:
+                    path_to_files['vertebrae_path'] = path_to_files['vertebrae_path'].replace('.png', '.txt')
+                           
+                images = {dir.split("_")[0]: Image.open(path).convert('L') for dir, path in path_to_files.items() if dir != 'vertebrae_path'}                            
+                # copy of images without the corrupted image
+                images_copy = images.copy()
+                images_copy.pop('corrupted')
+
+                for augmentation_class_instance in augmentations:                    
+                    augmented_images = augmentation_class_instance.augmentation(**images_copy)
+                    for image_dict in augmented_images:
+                        # save the augmented images in the train_data directory
+                        for image_type,image in image_dict.items():
+                            sub_dir = os.path.join(train_data_dir, image_type)
+                            os.makedirs(sub_dir, exist_ok=True)
+                            filename = image_type + '_' + str(new_identifer) + '.png'
+                            dst_path = os.path.join(sub_dir, filename)
+                            image.save(dst_path)
+                        #also save the vertebrae file and ct file                        
+                        vertebrae_src_path = path_to_files['vertebrae_path']
+                        vertebrae_dst_path_dir = os.path.join(train_data_dir, 'vertebrae')
+                        os.makedirs(vertebrae_dst_path_dir, exist_ok=True)
+                        vertebrae_dst_path = os.path.join(train_data_dir + '/vertebrae', 'vertebrae_' + f"{new_identifer}.txt")
+                        shutil.copy(vertebrae_src_path, vertebrae_dst_path) 
+
+                        ct_src_path = path_to_files['ct_path']
+                        ct_dst_path_dir = os.path.join(train_data_dir, 'ct')
+                        os.makedirs(ct_dst_path_dir, exist_ok=True)
+                        ct_dst_path = os.path.join(train_data_dir + '/ct', 'ct_' + f"{new_identifer}.png")
+                        shutil.copy(ct_src_path, ct_dst_path)                                            
+
+                        new_identifer += 1
+        else:
+            # just copy the files
+            for identifier in train_identifiers:
+                for dir in self.dirs:
+                    # make the subdirectories
+                    sub_dir = os.path.join(train_data_dir, dir)
+                    os.makedirs(sub_dir, exist_ok=True)
+
+                    if dir == 'vertebrae':
+                        filename = dir + '_' + identifier + '.txt'
+                    else:
+                        filename = dir + '_' + identifier + '.png'
+
+                    src_path = os.path.join(getattr(self, dir + '_dir'), filename)
+                    dst_path = os.path.join(sub_dir, filename)
+                    shutil.copy(src_path, dst_path)
+        
+        print(f"Data split and saved in {hydra_output_dir}")
+
+        # Create new instances of the BaseClass class with the split data
+        train_dataset = BaseClass(train_data_dir, transform=self.transform, dirs=self.dirs, desired_input=self.desired_input, desired_output=self.desired_output)
+        val_dataset = BaseClass(val_data_dir, transform=self.transform, dirs=self.dirs, desired_input=self.desired_input, desired_output=self.desired_output)
+
+        return train_dataset, val_dataset
+
+
+
+
+
+
+
+
+  
+
+
+
 
 
  # Define the Dataset class
