@@ -9,7 +9,7 @@
 
 *.json
 
-
+checkpoints/*
 
 docs/site/
 

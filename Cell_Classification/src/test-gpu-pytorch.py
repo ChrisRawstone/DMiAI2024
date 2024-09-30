@@ -1,7 +1,12 @@
 import torch
 
+
+
+
+
 # Check if CUDA is available
 if torch.cuda.is_available():
+
     num_gpus = torch.cuda.device_count()
     print(f"CUDA is available! Number of GPUs: {num_gpus}")
     

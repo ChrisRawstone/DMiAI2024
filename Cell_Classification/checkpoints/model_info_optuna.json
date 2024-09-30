@@ -1,9 +1,0 @@
-{
-    "model_name": "MobileNetV3",
-    "img_size": 299,
-    "batch_size": 32,
-    "learning_rate": 0.00043605938389640217,
-    "weight_decay": 0.000426882963537632,
-    "gamma": 2.3121281899964274,
-    "alpha": 0.6804386620215646
-}
