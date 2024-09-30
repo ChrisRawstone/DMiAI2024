@@ -1,122 +1,64 @@
+# models/model.py
+
 import torch
 import torch.nn as nn
-import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader
-from torchvision import transforms, models
+from torchvision import models
 
-# model = models.densenet121(pretrained=True)
-# model = models.efficientnet_b0(pretrained=True)
-# model = models.inception_v3(pretrained=True)
-# model = models.vgg16(pretrained=True)
-# model = models.mobilenet_v2(pretrained=True)
-
-# class SimpleClassifier(nn.Module):
-#     def __init__(self):
-#         super(SimpleClassifier, self).__init__()
-#         model = models.resnet50(weights=True)
-#         # Unfreeze the last few layers
-#         for name, param in model.named_parameters():
-#             if 'layer4' in name or 'fc' in name:
-#                 param.requires_grad = True
-#             else:
-#                 param.requires_grad = False
-
-        
-#         # Replace the fully connected layer (classifier)
-#         num_ftrs = model.fc.in_features
-#         model.fc = nn.Linear(num_ftrs, 2)  # 2 classes in your binary classification task
-
-#         # Set the device to GPU if available
-#         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-#         self.model = model.to(device)
-        
-#     def forward(self, x):
-#         return self.model(x)
-
-class SimpleClassifier(nn.Module):
-    def __init__(self):
-        super(SimpleClassifier, self).__init__()
-        model = models.efficientnet_b4(weights='DEFAULT')
-        # Unfreeze certain layers
-        for name, param in model.named_parameters():
-            if 'features.8' in name or 'classifier' in name:
-                param.requires_grad = True
-            else:
-                param.requires_grad = False
-        
-        # Modify the classifier
-        num_ftrs = model.classifier[1].in_features
-        model.classifier[1] = nn.Linear(num_ftrs, 2)
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.model = model.to(device)
-        
-    def forward(self, x):
-        return self.model(x)
-
-# class SimpleClassifier(nn.Module):
-#     def __init__(self):
-#         super(SimpleClassifier, self).__init__()
-#         model = models.efficientnet_b4(weights='DEFAULT')
-#         for name, param in model.named_parameters():
-#             if 'features.8' in name or 'classifier' in name:
-#                 param.requires_grad = True
-#             else:
-#                 param.requires_grad = False
-        
-#         num_ftrs = model.classifier[1].in_features
-#         model.classifier = nn.Sequential(
-#             nn.Dropout(p=0.5),
-#             nn.Linear(num_ftrs, 2)
-#         )
-#         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-#         self.model = model.to(device)
-        
-#     def forward(self, x):
-#         return self.model(x)
-
-
-
-# Define the Autoencoder architecture
 class Autoencoder(nn.Module):
-    def __init__(self, latent_dim=256):
+    def __init__(self, latent_dim=128):
         super(Autoencoder, self).__init__()
-        # Encoder
-        self.encoder = nn.Sequential(
-            nn.Conv2d(3, 64, kernel_size=4, stride=2, padding=1),
-            nn.ReLU(True),
-            nn.Conv2d(64, 128, kernel_size=4, stride=2, padding=1),
-            nn.ReLU(True),
-            nn.Conv2d(128, 256, kernel_size=4, stride=2, padding=1),
-            nn.ReLU(True),
-            nn.Flatten(),
-            nn.Linear(256 * 28 * 28, latent_dim)  # Adjust this based on image size
-        )
+        # Pretrained ResNet18 Encoder
+        pretrained_encoder = models.resnet18(pretrained=True)
+        # Remove the final fully connected layer and average pooling
+        self.encoder = nn.Sequential(*list(pretrained_encoder.children())[:-1])  # Output: (batch_size, 512, 1, 1)
+        
+        # Freeze the encoder parameters
+        for param in self.encoder.parameters():
+            param.requires_grad = False
+        
+        self.fc_enc = nn.Linear(pretrained_encoder.fc.in_features, latent_dim)
         
         # Decoder
+        self.fc_dec = nn.Linear(latent_dim, 512 * 1 * 1)
         self.decoder = nn.Sequential(
-            nn.Linear(latent_dim, 256 * 28 * 28),
-            nn.Unflatten(1, (256, 28, 28)),
-            nn.ConvTranspose2d(256, 128, kernel_size=4, stride=2, padding=1),
+            nn.ConvTranspose2d(512, 256, kernel_size=4, stride=2, padding=1),  # 1x1 -> 2x2
             nn.ReLU(True),
-            nn.ConvTranspose2d(128, 64, kernel_size=4, stride=2, padding=1),
+            nn.ConvTranspose2d(256, 128, kernel_size=4, stride=2, padding=1),  # 2x2 -> 4x4
             nn.ReLU(True),
-            nn.ConvTranspose2d(64, 3, kernel_size=4, stride=2, padding=1),
-            nn.Sigmoid()  # Output pixel values in the range [0, 1]
+            nn.ConvTranspose2d(128, 64, kernel_size=4, stride=2, padding=1),   # 4x4 -> 8x8
+            nn.ReLU(True),
+            nn.ConvTranspose2d(64, 32, kernel_size=4, stride=2, padding=1),    # 8x8 -> 16x16
+            nn.ReLU(True),
+            nn.ConvTranspose2d(32, 16, kernel_size=4, stride=2, padding=1),    # 16x16 -> 32x32
+            nn.ReLU(True),
+            nn.ConvTranspose2d(16, 8, kernel_size=4, stride=2, padding=1),     # 32x32 -> 64x64
+            nn.ReLU(True),
+            nn.ConvTranspose2d(8, 3, kernel_size=4, stride=2, padding=1),      # 64x64 -> 128x128
+            nn.Sigmoid(),  # Ensures output is between 0 and 1
         )
-
+    
     def forward(self, x):
-        latent_space = self.encoder(x)
-        reconstructed = self.decoder(latent_space)
-        return reconstructed, latent_space
+        # Encode
+        encoded = self.encoder(x)             # (batch_size, 512, 1, 1)
+        encoded = torch.flatten(encoded, 1)    # (batch_size, 512)
+        latent = self.fc_enc(encoded)          # (batch_size, latent_dim)
+        
+        # Decode
+        decoded = self.fc_dec(latent)          # (batch_size, 512)
+        decoded = decoded.view(-1, 512, 1, 1)  # (batch_size, 512, 1, 1)
+        reconstructed = self.decoder(decoded)  # (batch_size, 3, 128, 128)
+        return reconstructed
 
-class ClassifierOnAE(nn.Module):
-    def __init__(self, latent_dim=256, num_classes=2):
-        super(ClassifierOnAE, self).__init__()
-        self.fc = nn.Sequential(
-            nn.Linear(latent_dim, 128),
+
+class Classifier(nn.Module):
+    def __init__(self, latent_dim=128, num_classes=2):
+        super(Classifier, self).__init__()
+        self.classifier = nn.Sequential(
+            nn.Linear(latent_dim, 64),
             nn.ReLU(True),
-            nn.Linear(128, num_classes)
+            nn.Dropout(0.5),
+            nn.Linear(64, num_classes),
         )
-
+    
     def forward(self, x):
-        return self.fc(x)
+        return self.classifier(x)

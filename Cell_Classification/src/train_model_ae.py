@@ -1,19 +1,15 @@
+# training.py
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader
-from torchvision import transforms, models
-from collections import Counter
+from torch.utils.data import DataLoader
+from torchvision import transforms
+from data.make_dataset import LoadTifDataset
+from models.model import Autoencoder, Classifier
+import os
 import numpy as np
-from models.model import SimpleClassifier, Autoencoder, ClassifierOnAE
-from predict_model import predict_local
-from data.make_dataset import LoadTifDataset, PadToSize
-
-# Function to train the model
-import torch
-
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(f'I am on the device: {device}')
+import matplotlib.pyplot as plt
 
 def calculate_custom_score(a_0, a_1, n_0, n_1):
     # Ensure no division by zero
@@ -21,165 +17,292 @@ def calculate_custom_score(a_0, a_1, n_0, n_1):
         return 0
     return (a_0 * a_1) / (n_0 * n_1)
 
-def train_model(model, train_dataloader, criterion, optimizer, device, num_epochs=5):
-    for epoch in range(num_epochs):
-        model.train()
+def visualize_reconstructions(model, dataloader, device, num_images=5):
+    model.eval()
+    images, _ = next(iter(dataloader))
+    images = images.to(device)
+    with torch.no_grad():
+        reconstructed = model(images)
+    images = images.cpu().numpy()
+    reconstructed = reconstructed.cpu().numpy()
+
+    for i in range(num_images):
+        fig, axes = plt.subplots(1, 2)
+        # Original Image
+        axes[0].imshow(np.transpose(images[i], (1, 2, 0)))
+        axes[0].set_title("Original")
+        axes[0].axis('off')
+        # Reconstructed Image
+        axes[1].imshow(np.transpose(reconstructed[i], (1, 2, 0)))
+        axes[1].set_title("Reconstructed")
+        axes[1].axis('off')
+        plt.show()
+
+def main():
+    # ============================
+    # 1. Configuration
+    # ============================
+    train_csv = "data/training.csv"          # Path to your CSV file with image IDs and labels for training
+    train_image_dir = 'data/training/'       # Path to your training images
+    val_csv = "data/validation.csv"          # Path to your CSV file with image IDs and labels for validation
+    val_image_dir = 'data/validation/'       # Path to your validation images
+    batch_size = 8
+    latent_dim = 128                          # Increased from 50 to 128 for richer latent representations
+    num_epochs_ae = 50
+    num_epochs_clf = 100
+    learning_rate_ae = 1e-3                    # Reduced from 1e-2 to 1e-3 for stable AE training
+    learning_rate_clf = 1e-3
+    patience = 10                              # For early stopping
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+    # ============================
+    # 2. Data Transforms
+    # ============================
+    transform_train = transforms.Compose([
+        transforms.Grayscale(num_output_channels=3),  # Convert to 3 channels
+        transforms.Resize((128, 128)),
+        transforms.RandomHorizontalFlip(),
+        transforms.RandomRotation(10),
+        transforms.ToTensor(),  # Scales images to [0,1]
+    ])
+
+    transform_val = transforms.Compose([
+        transforms.Grayscale(num_output_channels=3),  # Convert to 3 channels
+        transforms.Resize((128, 128)),
+        transforms.ToTensor(),  # Scales images to [0,1]
+    ])
+    
+    # ============================
+    # 3. Load Datasets
+    # ============================
+    dataset_train = LoadTifDataset(csv_file=train_csv, image_dir=train_image_dir, transform=transform_train)
+    dataset_val = LoadTifDataset(csv_file=val_csv, image_dir=val_image_dir, transform=transform_val)
+    
+    # ============================
+    # 4. Handle Class Imbalance
+    # ============================
+    labels_train = [label for _, label in dataset_train]
+    class_counts = np.bincount(labels_train)
+    if len(class_counts) < 2:
+        # Ensure there are at least two classes
+        class_counts = np.pad(class_counts, (0, 2 - len(class_counts)), 'constant')
+    class_weights = 1. / class_counts
+    class_weights = class_weights / class_weights.sum() * len(class_counts)  # Normalize weights
+    class_weights_tensor = torch.tensor(class_weights, dtype=torch.float).to(device)
+    
+    # ============================
+    # 5. Initialize DataLoaders
+    # ============================
+    train_loader_ae = DataLoader(dataset_train, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True)
+    val_loader_ae = DataLoader(dataset_val, batch_size=batch_size, shuffle=False, num_workers=4, pin_memory=True)
+    
+    # ============================
+    # 6. Initialize Autoencoder
+    # ============================
+    autoencoder = Autoencoder(latent_dim=latent_dim).to(device)
+    criterion_ae = nn.MSELoss()
+    optimizer_ae = optim.Adam(autoencoder.parameters(), lr=learning_rate_ae)
+    
+    # Learning Rate Scheduler for AE (Optional)
+    scheduler_ae = optim.lr_scheduler.StepLR(optimizer_ae, step_size=20, gamma=0.1)
+    
+    print("Starting Autoencoder Training...")
+    best_val_loss = float('inf')
+    epochs_no_improve = 0
+    
+    # ============================
+    # 7. Training Loop for Autoencoder with Early Stopping
+    # ============================
+    for epoch in range(num_epochs_ae):
+        autoencoder.train()
         running_loss = 0.0
-        
-        # Training phase
-        for inputs, labels in train_dataloader:
-            inputs = inputs.to(device)
-            labels = labels.to(device)
-
-            # Zero the parameter gradients
-            optimizer.zero_grad()
-
-            # Forward pass
-            outputs = model(inputs)
-            loss = criterion(outputs, labels)
-            
-            # Backward pass and optimize
+        for images, _ in train_loader_ae:
+            images = images.to(device)
+            optimizer_ae.zero_grad()
+            outputs = autoencoder(images)
+            loss = criterion_ae(outputs, images)
             loss.backward()
-            optimizer.step()
-
-            running_loss += loss.item() * inputs.size(0)  # Multiply by batch size
-
-        epoch_loss = running_loss / len(train_dataloader.dataset)
-        print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {epoch_loss:.4f}")
+            optimizer_ae.step()
+            running_loss += loss.item() * images.size(0)
+        epoch_loss = running_loss / len(train_loader_ae.dataset)
         
-        # # Evaluation phase on training set
-        # model.eval()
-        # total_0 = 0
-        # total_1 = 0
-        # correct_0 = 0
-        # correct_1 = 0
+        # Validation
+        autoencoder.eval()
+        val_loss = 0.0
+        with torch.no_grad():
+            for images, _ in val_loader_ae:
+                images = images.to(device)
+                outputs = autoencoder(images)
+                loss = criterion_ae(outputs, images)
+                val_loss += loss.item() * images.size(0)
+        val_loss /= len(val_loader_ae.dataset)
         
-        # with torch.no_grad():
-        #     for inputs, labels in train_dataloader:
-        #         inputs = inputs.to(device)
-        #         labels = labels.to(device)
-
-        #         outputs = model(inputs)
-        #         _, predicted = torch.max(outputs, 1)
-        #         # Calculate correct predictions and totals for each class
-        #         total_0 += (labels == 0).sum().item()
-        #         total_1 += (labels == 1).sum().item()
-
-        #         correct_0 += ((predicted == 0) & (labels == 0)).sum().item()
-        #         correct_1 += ((predicted == 1) & (labels == 1)).sum().item()
+        # Print Losses
+        print(f"Epoch [{epoch+1}/{num_epochs_ae}], Train Loss: {epoch_loss:.6f}, Val Loss: {val_loss:.6f}")
+        
+        # Check for improvement
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            epochs_no_improve = 0
+            # Save the best AE model
+            torch.save(autoencoder.state_dict(), 'models/best_autoencoder.pth')
+        else:
+            epochs_no_improve += 1
+            if epochs_no_improve >= patience:
+                print("Early stopping triggered for Autoencoder!")
+                break
+        
+        # Step the scheduler
+        scheduler_ae.step()
+        
+        # Visualize reconstructions every 10 epochs
+        if (epoch + 1) % 10 == 0:
+            visualize_reconstructions(autoencoder, val_loader_ae, device)
+    
+    # ============================
+    # 8. Load the Best Autoencoder
+    # ============================
+    autoencoder.load_state_dict(torch.load('models/best_autoencoder.pth'))
+    print("Autoencoder training completed and best model saved.")
+    
+    # ============================
+    # 9. Feature Extraction
+    # ============================
+    autoencoder.eval()
+    
+    def extract_features(loader):
+        features = []
+        labels = []
+        with torch.no_grad():
+            for images, lbls in loader:
+                images = images.to(device)
+                encoded = autoencoder.encoder(images)             # (batch_size, 512, 1, 1)
+                encoded = torch.flatten(encoded, 1)               # (batch_size, 512)
+                latent = autoencoder.fc_enc(encoded)              # (batch_size, latent_dim)
+                features.append(latent.cpu())
+                labels.append(lbls)
+        features = torch.cat(features, dim=0)
+        labels = torch.cat(labels, dim=0)
+        return features, labels
+    
+    print("Extracting latent features...")
+    train_features, train_labels = extract_features(train_loader_ae)
+    val_features, val_labels = extract_features(val_loader_ae)
+    
+    # ============================
+    # 10. Initialize Classifier
+    # ============================
+    classifier = Classifier(latent_dim=latent_dim, num_classes=2).to(device)
+    criterion_clf = nn.CrossEntropyLoss(weight=class_weights_tensor)
+    optimizer_clf = optim.Adam(classifier.parameters(), lr=learning_rate_clf, weight_decay=1e-5)  # Added weight_decay
+    
+    # Learning Rate Scheduler for Classifier (Optional)
+    scheduler_clf = optim.lr_scheduler.StepLR(optimizer_clf, step_size=40, gamma=0.1)
+    
+    # ============================
+    # 11. Create DataLoaders for Classifier
+    # ============================
+    train_dataset_clf = torch.utils.data.TensorDataset(train_features, train_labels)
+    val_dataset_clf = torch.utils.data.TensorDataset(val_features, val_labels)
+    
+    train_loader_clf = DataLoader(train_dataset_clf, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True)
+    val_loader_clf = DataLoader(val_dataset_clf, batch_size=batch_size, shuffle=False, num_workers=4, pin_memory=True)
+    
+    print("Starting Classifier Training...")
+    best_custom_score = 0
+    epochs_no_improve_clf = 0
+    
+    # ============================
+    # 12. Training Loop for Classifier with Early Stopping
+    # ============================
+    for epoch in range(num_epochs_clf):
+        classifier.train()
+        running_loss = 0.0
+        for features, labels in train_loader_clf:
+            features = features.to(device)
+            labels = labels.to(device)
+            optimizer_clf.zero_grad()
+            outputs = classifier(features)
+            loss = criterion_clf(outputs, labels)
+            loss.backward()
+            optimizer_clf.step()
+            running_loss += loss.item() * features.size(0)
+        epoch_loss = running_loss / len(train_loader_clf.dataset)
+        
+        # Validation
+        classifier.eval()
+        val_loss = 0.0
+        a_0 = 0  # Correct predictions for class 0
+        a_1 = 0  # Correct predictions for class 1
+        n_0 = 0  # Total actual class 0
+        n_1 = 0  # Total actual class 1
+        with torch.no_grad():
+            for features, labels in val_loader_clf:
+                features = features.to(device)
+                labels = labels.to(device)
+                outputs = classifier(features)
+                loss = criterion_clf(outputs, labels)
+                val_loss += loss.item() * features.size(0)
                 
-        #         print(f'labels:{labels}')
-        #         print(f'predicted:{predicted}')
-
-        # # Calculate the custom score
-        # custom_score = calculate_custom_score(correct_0, correct_1, total_0, total_1)
-        # print(f"Custom Score after Epoch {epoch + 1}: {custom_score:.4f}")
+                _, preds = torch.max(outputs, 1)
+                
+                # Update counts for custom score
+                for pred, true in zip(preds, labels):
+                    if true == 0:
+                        n_0 += 1
+                        if pred == 0:
+                            a_0 += 1
+                    elif true == 1:
+                        n_1 += 1
+                        if pred == 1:
+                            a_1 += 1
+        val_loss /= len(val_loader_clf.dataset)
         
-    print("Training complete!")
+        # Calculate custom score
+        custom_score = calculate_custom_score(a_0, a_1, n_0, n_1)
+        
+        # Print metrics
+        print(f"Epoch [{epoch+1}/{num_epochs_clf}], Train Loss: {epoch_loss:.6f}, Val Loss: {val_loss:.6f}, Custom Score: {custom_score:.6f}")
+        
+        # Step the scheduler
+        scheduler_clf.step()
     
-    return model
-
-# Define the padding size
-target_width = 1500
-target_height = 1470
-
-train_transform = transforms.Compose([
-    PadToSize(target_width=target_width, target_height=target_height),
-    # transforms.Resize((224, 224)),
-    # transforms.RandomHorizontalFlip(),
-    # transforms.RandomRotation(15),
-    transforms.Grayscale(num_output_channels=3),  # Convert to 3-channel grayscale if needed
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),  # Normalize to ImageNet mean and std
-
-])
-
-# Define transformations for validation data (no augmentation)
-val_transform = transforms.Compose([
-    PadToSize(target_width=target_width, target_height=target_height),
-    # transforms.Resize((224, 224)),
-    transforms.Grayscale(num_output_channels=3),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),  # Normalize to ImageNet mean and std
-
-])
-
-image_dir = "data/training"
-csv_file_path = "data/training.csv"
-train_dataset = LoadTifDataset(image_dir=image_dir, csv_file_path=csv_file_path, transform=train_transform)
-train_dataloader = DataLoader(train_dataset, batch_size=8, shuffle=True)
-
-
-# Get the labels from the dataset
-labels = train_dataset.labels_df.iloc[:, 1].values  # Assuming labels are in the second column
-
-# Compute class counts
-class_sample_counts = np.array([np.sum(labels == i) for i in range(2)])
-n_samples = sum(class_sample_counts)
-
-# Compute class weights
-class_weights = n_samples / (2 * class_sample_counts)
-class_weights = torch.tensor(class_weights, dtype=torch.float32).to(device)
-
-model = SimpleClassifier().to(device)
-criterion = nn.CrossEntropyLoss(weight=class_weights)
-optimizer = optim.Adam(model.model.fc.parameters(), lr=0.0001)  # Reduced learning rate for fine-tuning
-
-# Train the model
-num_epochs = 70
-model = train_model(model, train_dataloader, criterion, optimizer, device, num_epochs=num_epochs)
-
-score = predict_local(model, train_dataloader, calculate_custom_score, device)
-print(score)
-
-
-
-# ################## AE
-# # Loss function and optimizer
-# autoencoder = Autoencoder(latent_dim=256).to(device)
-# criterion = nn.MSELoss()  # Use MSE loss for image reconstruction
-# optimizer = optim.Adam(autoencoder.parameters(), lr=0.001)
-
-# # Training loop
-# for epoch in range(num_epochs):
-#     autoencoder.train()
-#     running_loss = 0.0
-#     for inputs, _ in train_dataloader:  # No need for labels when training the autoencoder
-#         inputs = inputs.to(device)
-#         optimizer.zero_grad()
-        
-#         # Forward pass
-#         outputs, latent_space = autoencoder(inputs)
-#         loss = criterion(outputs, inputs)  # Reconstruction loss
-#         loss.backward()
-#         optimizer.step()
-        
-#         running_loss += loss.item()
+    # ============================
+    # 13. Load the Best Classifier
+    # ============================
+    classifier.load_state_dict(torch.load('models/best_classifier.pth'))
+    print("Classifier training completed and best model saved.")
     
-#     print(f"Epoch {epoch + 1}, Loss: {running_loss / len(train_dataloader)}")
-
-# # Training the classifier using latent space representations
-# classifier = ClassifierOnAE(latent_dim=256, num_classes=2).to(device)
-# classifier_optimizer = optim.Adam(classifier.parameters(), lr=0.001)
-# classifier_criterion = nn.CrossEntropyLoss()
-
-# for epoch in range(num_epochs):
-#     classifier.train()
-#     running_loss = 0.0
-#     for inputs, labels in train_dataloader:  # Use only labeled data here
-#         inputs, labels = inputs.to(device), labels.to(device)
-        
-#         # Get the latent space representation from the autoencoder
-#         _, latent_space = autoencoder(inputs)
-        
-#         # Train the classifier on latent space
-#         outputs = classifier(latent_space)
-#         loss = classifier_criterion(outputs, labels)
-#         classifier_optimizer.zero_grad()
-#         loss.backward()
-#         classifier_optimizer.step()
-        
-#         running_loss += loss.item()
+    # ============================
+    # 14. Final Evaluation on Validation Set
+    # ============================
+    print("Starting Final Evaluation on Validation Set...")
+    classifier.eval()
+    a_0_final = 0  # Correct predictions for class 0
+    a_1_final = 0  # Correct predictions for class 1
+    n_0_final = 0  # Total actual class 0
+    n_1_final = 0  # Total actual class 1
+    with torch.no_grad():
+        for features, labels in val_loader_clf:
+            features = features.to(device)
+            labels = labels.to(device)
+            outputs = classifier(features)
+            _, preds = torch.max(outputs, 1)
+            
+            # Update counts for custom score
+            for pred, true in zip(preds, labels):
+                if true == 0:
+                    n_0_final += 1
+                    if pred == 0:
+                        a_0_final += 1
+                elif true == 1:
+                    n_1_final += 1
+                    if pred == 1:
+                        a_1_final += 1
+    final_custom_score = calculate_custom_score(a_0_final, a_1_final, n_0_final, n_1_final)
     
-#     print(f"Epoch {epoch + 1}, Classifier Loss: {running_loss / len(train_dataloader)}")
+    print(f"Final Custom Score on Validation Set: {final_custom_score:.6f}")
+    
 
+if __name__ == "__main__":
+    main()
