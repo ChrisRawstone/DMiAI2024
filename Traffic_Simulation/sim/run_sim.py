@@ -8,14 +8,17 @@ from dtos import SignalDto
 input_queue = Queue()
 output_queue = Queue()
 error_queue = Queue()
-#Changes: MIN_GREEN_DURATION = 10, FAIRNESS_THRESHOLD = 50
+
 # Fairness parameters
 FAIRNESS_THRESHOLD = 50  # Number of ticks after which a pair must be prioritized
-MIN_GREEN_DURATION = 10  # Minimum duration a signal pair must stay green (in ticks)
+MIN_GREEN_DURATION = 10   # Minimum duration a signal pair must stay green (in ticks)
+OVERLAP_DURATION = 2      # Duration where both old and new signals remain green (in ticks)
 
 # Track the last green signal pair and its activation time
 current_green_pair = None
 current_green_start_time = 0
+previous_green_pair = None  # To track the previous signal pair for overlap
+previous_green_start_time = 0
 pair_waiting_time = defaultdict(lambda: 0)
 
 def generate_unique_pairs(allowed_green_signal_combinations):
@@ -53,7 +56,7 @@ def run_game():
     sleep(0.2)
 
     actions = {}
-    global current_green_pair, current_green_start_time
+    global current_green_pair, current_green_start_time, previous_green_pair, previous_green_start_time
 
     while True:
         # Get the state from the output queue
@@ -134,6 +137,8 @@ def run_game():
                 selected_pair = valid_pairs[0]
 
             # Set the new green pair and its start time
+            previous_green_pair = current_green_pair  # Track the previous pair for overlap
+            previous_green_start_time = current_green_start_time
             current_green_pair = selected_pair
             current_green_start_time = state.simulation_ticks
             print(f"Selected signal pair for green: {selected_pair}")
@@ -142,13 +147,21 @@ def run_game():
         next_signals = []
         processed_signals = set()  # Track the signals that have been processed
 
-        # First, make sure the selected pair is processed and both signals are set to green
+        # Apply overlap logic: if the previous pair exists and is still within the overlap period, keep them green
+        if previous_green_pair and (state.simulation_ticks - previous_green_start_time) < (MIN_GREEN_DURATION + OVERLAP_DURATION):
+            print(f"Keeping previous pair {previous_green_pair} green for overlap.")
+            for group in previous_green_pair:
+                if group not in processed_signals:
+                    next_signals.append(SignalDto(name=group, state="green"))
+                    processed_signals.add(group)
+
+        # Set the selected pair to green
         for group in selected_pair:
             if group not in processed_signals:
                 next_signals.append(SignalDto(name=group, state="green"))
                 processed_signals.add(group)
 
-        # Now, process the rest of the pairs and set remaining signals to red
+        # Set the rest to red
         for pair in valid_pairs:
             if pair != selected_pair:
                 for group in pair:
