@@ -13,7 +13,7 @@ import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
 from torchvision import transforms, models
 from torchvision.models import ViT_B_16_Weights
-
+from data.make_dataset import LoadTifDataset
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 
@@ -63,107 +63,36 @@ logging.getLogger('').addHandler(console)
 
 logging.info(f"Number of GPUs available: {num_gpus}")
 
-# Create necessary directories
-os.makedirs('plots', exist_ok=True)
-os.makedirs('checkpoints', exist_ok=True)
-
 
 # Create directories
 os.makedirs('plots', exist_ok=True)
 os.makedirs('checkpoints', exist_ok=True)
 os.makedirs('logs', exist_ok=True)
 
-# Setup logging
-logging.basicConfig(
-    filename='logs/training.log',
-    level=logging.INFO,
-    format='%(asctime)s %(levelname)s %(message)s',
-)
-console = logging.StreamHandler()
-console.setLevel(logging.INFO)
-formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
-console.setFormatter(formatter)
-logging.getLogger('').addHandler(console)
+
 
 # ===============================
 # 2. Custom Score Function
 # ===============================
 
-# ===============================
-# 3. Data Decoding Functions
-# ===============================
 
-# (No changes needed here as duplicate imports were removed)
 
 # ===============================
-# 4. Custom Dataset
+# 4. Get Data and Dataloaders
 # ===============================
 
-class CustomDataset(Dataset):
-    def __init__(self, df, image_dir, transform=None):
-        self.df = df.reset_index(drop=True)
-        self.image_dir = image_dir
-        self.transform = transform
-
-    def __len__(self):
-        return len(self.df)
-
-    def __getitem__(self, idx):
-        image_id = str(self.df.iloc[idx]['image_id']).zfill(3)
-        label = int(self.df.iloc[idx]['is_homogenous'])
-        image_path = os.path.join(self.image_dir, f'{image_id}.tif')
-
-        # Read image directly using cv2
-        image = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
-        if image is None:
-            logging.error(f"Image file not found or failed to load: {image_path}")
-            # Return a black image if file not found
-            image = np.zeros((224, 224, 3), dtype=np.uint8)
-            label = 0
-            if self.transform:
-                augmented = self.transform(image=image)
-                image = augmented['image']
-            else:
-                image = transforms.ToTensor()(image)
-            return image, label
-
-        # Handle 16-bit images by converting to 8-bit
-        if image.dtype == np.uint16:
-            image = (image / 256).astype(np.uint8)
-
-        # Convert grayscale to RGB if needed
-        if len(image.shape) == 2:
-            image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
-        elif image.shape[2] == 1:
-            image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
-        elif image.shape[2] == 4:
-            # Handle images with alpha channel
-            image = cv2.cvtColor(image, cv2.COLOR_BGRA2RGB)
-        else:
-            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-
-        if self.transform:
-            augmented = self.transform(image=image)
-            image = augmented['image']
-        else:
-            image = transforms.ToTensor()(image).permute(2, 0, 1)
-
-        return image, label
-
-# ===============================
-# 5. Data Augmentation and Transforms
-# ===============================
-
-def get_transforms(img_size=224):
+def get_dataloaders(batch_size, img_size):
     """
-    Returns training and validation transforms.
+    Returns DataLoader objects for training and validation datasets.
 
     Args:
-        img_size (int, optional): Image size for resizing. Defaults to 224.
+        batch_size (int): Batch size for DataLoaders.
+        img_size (int): Image size for resizing.
 
     Returns:
-        tuple: Training and validation transforms.
+        tuple: Training and validation DataLoaders.
     """
+    # Define transformations
     train_transform = A.Compose([
         A.Resize(img_size, img_size),
         A.HorizontalFlip(p=0.5),
@@ -184,54 +113,33 @@ def get_transforms(img_size=224):
         ToTensorV2(),
     ])
 
-    return train_transform, val_transform
+    # Paths to images and CSV files
+    image_dir = "data/training"
+    csv_file_path = "data/training.csv"
 
-# ===============================
-# 6. Load CSV Files
-# ===============================
+    image_dir_val = "data/validation16bit"
+    csv_file_path_val = "data/validation.csv"
 
-train_df = pd.read_csv('data/training.csv')
-val_df = pd.read_csv('data/validation.csv')
+    # Create the datasets
+    train_dataset = LoadTifDataset(image_dir=image_dir, csv_file_path=csv_file_path, transform=train_transform)
+    val_dataset = LoadTifDataset(image_dir=image_dir_val, csv_file_path=csv_file_path_val, transform=val_transform)
 
-logging.info(f"Training samples: {len(train_df)}")
-logging.info(f"Validation samples: {len(val_df)}")
+    # Extract labels from the dataset
+    train_labels = train_dataset.labels_df.iloc[:, 1].values  # assuming labels are in the second column
 
-# ===============================
-# 7. Create Datasets and DataLoaders with Weighted Sampling
-# ===============================
+    # Compute class counts and weights
+    class_counts = np.bincount(train_labels)
+    class_weights = 1. / class_counts
+    samples_weights = class_weights[train_labels]
 
-def get_dataloaders(batch_size, img_size):
-    """
-    Returns DataLoader objects for training and validation datasets.
+    # Create WeightedRandomSampler
+    sampler = WeightedRandomSampler(weights=samples_weights, num_samples=len(samples_weights), replacement=True)
 
-    Args:
-        batch_size (int): Batch size for DataLoaders.
-        img_size (int): Image size for resizing.
-
-    Returns:
-        tuple: Training and validation DataLoaders.
-    """
-    train_transform, val_transform = get_transforms(img_size=img_size)
-    train_dataset = CustomDataset(train_df, 'data/training', transform=train_transform)
-    val_dataset = CustomDataset(val_df, 'data/validation', transform=val_transform)
-
-    # Calculate class weights for WeightedRandomSampler
-    class_counts = train_df['is_homogenous'].value_counts().to_dict()
-    total_samples = len(train_df)
-    weights = [1.0] * len(train_df)
-
-    for idx, label in enumerate(train_df['is_homogenous']):
-        if label == 0:
-            weights[idx] = total_samples / (2 * class_counts.get(0, 1))
-        else:
-            weights[idx] = total_samples / (2 * class_counts.get(1, 1))
-
-    sampler = WeightedRandomSampler(weights, num_samples=len(train_df), replacement=True)
-
+    # Create DataLoaders
     train_loader = DataLoader(
         train_dataset,
         batch_size=batch_size,
-        sampler=sampler,  # Use sampler for weighted sampling
+        sampler=sampler,
         num_workers=8,
         pin_memory=True
     )
@@ -245,10 +153,6 @@ def get_dataloaders(batch_size, img_size):
     )
 
     return train_loader, val_loader
-
-# ===============================
-# 8. Save Sample Images
-# ===============================
 
 def save_sample_images(dataset, num_samples=5, folder='plots', split='train'):
     """
