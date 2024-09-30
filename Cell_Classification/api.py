@@ -4,7 +4,7 @@ import uvicorn
 from fastapi import FastAPI, HTTPException
 import datetime
 import time
-from src.utils import load_model, load_sample, save_image_as_tif  # Updated import
+from src.utils import load_model, save_image_as_tif  # Updated import
 from src.predict import predict
 from loguru import logger
 from pydantic import BaseModel
@@ -12,6 +12,8 @@ from typing import List
 import numpy as np
 import os
 import joblib
+from src.data.make_dataset import tif_to_ndarray, convert_16bit_to_8bit  # Updated import
+import matplotlib.pyplot as plt
 
 HOST = "0.0.0.0"
 PORT = 9090
@@ -52,28 +54,17 @@ def predict_endpoint(request: CellClassificationPredictRequestDto):
     global counter
     try:
         # Decode and load the image
-        sample = load_sample(request.cell)
-        image = sample.get("image")
-        
-        if image is None:
-            raise ValueError("Image decoding failed.")
+        image = tif_to_ndarray(request.cell)
 
-        # Ensure the image is in the correct format 
-        if not isinstance(image, np.ndarray):
-            raise TypeError("Decoded image is not a NumPy array.")
-        
-        counter += 1
-        
-        # Save the image as a 16-bit .tif file
-        save_path = os.path.join("data/saved_images", f"{counter}".zfill(3)+".tif")
-        save_image_as_tif(image, save_path)
-        logger.info(f"Image saved at {save_path}")
+        image = convert_16bit_to_8bit(image)
 
-
+        plt.imshow(image)
+        plt.axis('off')
+        plt.savefig(f'plots/test.png')
+        plt.show()
 
         
-        # Make prediction by passing the image array
-        predicted_homogenous_state = predict( image)
+        predicted_homogenous_state=0
         
         # Return the prediction
         response = CellClassificationPredictResponseDto(

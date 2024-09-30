@@ -22,6 +22,7 @@ from utils import (
     calculate_custom_score
 )
 
+
 def main():
     parser = argparse.ArgumentParser(description="Evaluation Script")
     
