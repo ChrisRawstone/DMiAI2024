@@ -1,5 +1,4 @@
 # train_model.py
-
 import os
 import cv2
 import base64
@@ -541,7 +540,7 @@ def objective(trial):
 # Ensure that the DataParallel setup is correctly applied within the objective function.
 
 study = optuna.create_study(direction='maximize')
-study.optimize(objective, n_trials=1, timeout=None)  # Increased n_trials for better hyperparameter exploration
+study.optimize(objective, n_trials=20, timeout=None)  # Increased n_trials for better hyperparameter exploration
 
 logging.info("===== Best Trial =====")
 best_trial = study.best_trial
@@ -575,7 +574,7 @@ def train_best_model(trial):
     gamma = trial.params['gamma']
     alpha = trial.params['alpha']
 
-    num_epochs = 5  # Increased epochs for final training
+    num_epochs = 10  # Increased epochs for final training
 
     # Get model
     models_dict = get_models()

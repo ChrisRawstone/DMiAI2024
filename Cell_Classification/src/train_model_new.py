@@ -69,12 +69,9 @@ os.makedirs('plots', exist_ok=True)
 os.makedirs('checkpoints', exist_ok=True)
 os.makedirs('logs', exist_ok=True)
 
-
-
 # ===============================
 # 2. Custom Score Function
 # ===============================
-
 
 
 # ===============================
@@ -127,13 +124,22 @@ def get_dataloaders(batch_size, img_size):
     # Extract labels from the dataset
     train_labels = train_dataset.labels_df.iloc[:, 1].values  # assuming labels are in the second column
 
-    # Compute class counts and weights
-    class_counts = np.bincount(train_labels)
-    class_weights = 1. / class_counts
-    samples_weights = class_weights[train_labels]
+    # Compute class counts and total samples
+    class_counts = train_dataset.labels_df['is_homogenous'].value_counts().to_dict()
+    total_samples = len(train_labels)
+    
+    # Initialize weights list
+    weights = [1.0] * total_samples
+
+    # Assign weights to each sample
+    for idx, label in enumerate(train_labels):
+        if label == 0:
+            weights[idx] = total_samples / (2 * class_counts.get(0, 1))
+        else:
+            weights[idx] = total_samples / (2 * class_counts.get(1, 1))
 
     # Create WeightedRandomSampler
-    sampler = WeightedRandomSampler(weights=samples_weights, num_samples=len(samples_weights), replacement=True)
+    sampler = WeightedRandomSampler(weights, num_samples=total_samples, replacement=True)
 
     # Create DataLoaders
     train_loader = DataLoader(
@@ -445,7 +451,7 @@ def objective(trial):
 # Ensure that the DataParallel setup is correctly applied within the objective function.
 
 study = optuna.create_study(direction='maximize')
-study.optimize(objective, n_trials=1, timeout=None)  # Increased n_trials for better hyperparameter exploration
+study.optimize(objective, n_trials=20, timeout=None)  # Increased n_trials for better hyperparameter exploration
 
 logging.info("===== Best Trial =====")
 best_trial = study.best_trial
@@ -479,7 +485,7 @@ def train_best_model(trial):
     gamma = trial.params['gamma']
     alpha = trial.params['alpha']
 
-    num_epochs = 5  # Increased epochs for final training
+    num_epochs = 10  # Increased epochs for final training
 
     # Get model
     models_dict = get_models()

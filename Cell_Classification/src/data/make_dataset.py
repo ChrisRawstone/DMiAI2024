@@ -111,7 +111,9 @@ class LoadTifDataset(Dataset):
         # Convert grayscale to RGB by replicating channels
         if len(image.shape) == 2:
             image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
-
+        else:
+            # Convert from BGR to RGB
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         # Apply the transformations
         if self.transform:
             # Albumentations expects numpy array and returns a dictionary
