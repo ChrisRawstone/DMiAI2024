@@ -16,12 +16,45 @@ import random
 # Set the desired image size (e.g., 128x128) for resizing
 IMAGE_SIZE = (224, 224)
 
+
+
 def set_seed(seed=42):
     """Set random seeds for reproducibility."""
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
+
+def calculate_custom_score(y_true, y_pred):
+    """
+    Calculates the custom score based on the formula:
+    Score = (a0 * a1) / (n0 * n1)
+
+    Where:
+    - a0: True Negatives (correctly predicted as 0)
+    - a1: True Positives (correctly predicted as 1)
+    - n0: Total actual class 0 samples
+    - n1: Total actual class 1 samples
+    """
+    y_true = np.array(y_true)
+    y_pred = np.array(y_pred)
+
+    # True Negatives (a0)
+    a0 = np.sum((y_true == 0) & (y_pred == 0))
+
+    # True Positives (a1)
+    a1 = np.sum((y_true == 1) & (y_pred == 1))
+
+    # Total actual class 0 and class 1
+    n0 = np.sum(y_true == 0)
+    n1 = np.sum(y_true == 1)
+
+    # Avoid division by zero
+    if n0 == 0 or n1 == 0:
+        return 0.0
+
+    score = (a0 * a1) / (n0 * n1)
+    return score
 
 def get_transforms(img_size=224):
     """
@@ -99,10 +132,13 @@ def load_model(checkpoint_path, model_info_path, device):
     img_size = model_info['img_size']
 
     model = get_model(model_name, num_classes=1)
-    model.load_state_dict(torch.load(checkpoint_path, map_location=device))
+    state_dict = torch.load(checkpoint_path, map_location=device)
+    model.load_state_dict(state_dict)
     model.to(device)
     model.eval()
     return model, img_size, model_info
+
+
 
 def preprocess_image(image_path, transform, device):
     """

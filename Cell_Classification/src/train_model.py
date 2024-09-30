@@ -29,6 +29,8 @@ import logging
 import optuna
 import json
 
+from src.utils import calculate_custom_score
+
 # ===============================
 # 1. Setup and Configuration
 # ===============================
@@ -45,14 +47,9 @@ set_seed(42)
 # Define device and check available GPUs
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 num_gpus = torch.cuda.device_count()
-logging.info(f"Number of GPUs available: {num_gpus}")
 
-# Create necessary directories
-os.makedirs('plots', exist_ok=True)
-os.makedirs('checkpoints', exist_ok=True)
+# Setup logging early to capture GPU info
 os.makedirs('logs', exist_ok=True)
-
-# Setup logging
 logging.basicConfig(
     filename='logs/training.log',
     level=logging.INFO,
@@ -64,55 +61,21 @@ formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
 console.setFormatter(formatter)
 logging.getLogger('').addHandler(console)
 
+logging.info(f"Number of GPUs available: {num_gpus}")
+
+# Create necessary directories
+os.makedirs('plots', exist_ok=True)
+os.makedirs('checkpoints', exist_ok=True)
+
 # ===============================
 # 2. Custom Score Function
 # ===============================
-
-def calculate_custom_score(y_true, y_pred):
-    """
-    Calculates the custom score based on the formula:
-    Score = (a0 * a1) / (n0 * n1)
-
-    Where:
-    - a0: True Negatives (correctly predicted as 0)
-    - a1: True Positives (correctly predicted as 1)
-    - n0: Total actual class 0 samples
-    - n1: Total actual class 1 samples
-    """
-    y_true = np.array(y_true)
-    y_pred = np.array(y_pred)
-
-    # True Negatives (a0)
-    a0 = np.sum((y_true == 0) & (y_pred == 0))
-
-    # True Positives (a1)
-    a1 = np.sum((y_true == 1) & (y_pred == 1))
-
-    # Total actual class 0 and class 1
-    n0 = np.sum(y_true == 0)
-    n1 = np.sum(y_true == 1)
-
-    # Avoid division by zero
-    if n0 == 0 or n1 == 0:
-        logging.warning("One of the classes has zero samples. Returning score as 0.")
-        return 0.0
-
-    score = (a0 * a1) / (n0 * n1)
-    return score
 
 # ===============================
 # 3. Data Decoding Functions
 # ===============================
 
-import albumentations as A
-from albumentations.pytorch import ToTensorV2
-
-from sklearn.metrics import accuracy_score, roc_auc_score
-from tqdm import tqdm
-from PIL import Image
-
-import random
-import logging
+# (No changes needed here as duplicate imports were removed)
 
 # ===============================
 # 4. Custom Dataset
@@ -296,7 +259,7 @@ def save_sample_images(dataset, num_samples=5, folder='plots', split='train'):
 # save_sample_images(train_loader_temp.dataset, split='train')
 # save_sample_images(val_loader_temp.dataset, split='val')
 
-logging.info("Sample images saved to 'plots' folder.")
+# logging.info("Sample images saved to 'plots' folder.")
 
 # ===============================
 # 9. Define Models Dictionary
@@ -450,7 +413,7 @@ def objective(trial):
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
 
     # Mixed Precision Scaler
-    scaler = torch.amp.GradScaler()  # Updated to use torch.amp instead of torch.cuda.amp
+    scaler = torch.amp.GradScaler("cuda")  # Updated to use torch.cuda.amp
 
     best_custom_score = 0
 
@@ -515,9 +478,31 @@ def objective(trial):
 
         scheduler.step()
 
-        # Update best score
+        # Update best score and save model + JSON
         if custom_score > best_custom_score:
             best_custom_score = custom_score
+
+            # Save the best model from Optuna hypertuning
+            save_path_optuna = 'checkpoints/best_model_optuna.pth'
+            if isinstance(model, nn.DataParallel):
+                torch.save(model.module.state_dict(), save_path_optuna)
+            else:
+                torch.save(model.state_dict(), save_path_optuna)
+            logging.info(f"New best Optuna model saved with Val Score: {best_custom_score:.4f}")
+
+            # Save model architecture and hyperparameters for Optuna best model
+            model_info_optuna = {
+                'model_name': model_name,
+                'img_size': img_size,
+                'batch_size': batch_size,
+                'learning_rate': lr,
+                'weight_decay': weight_decay,
+                'gamma': gamma,
+                'alpha': alpha
+            }
+            with open('checkpoints/model_info_optuna.json', 'w') as f:
+                json.dump(model_info_optuna, f, indent=4)
+            logging.info("Optuna best model architecture and hyperparameters saved to 'checkpoints/model_info_optuna.json'.")
 
         # Report intermediate objective value
         trial.report(custom_score, epoch)
@@ -528,6 +513,8 @@ def objective(trial):
 
     return best_custom_score
 
+
+
 # ===============================
 # 12. Run Optuna Study
 # ===============================
@@ -536,12 +523,12 @@ def objective(trial):
 # Ensure that the DataParallel setup is correctly applied within the objective function.
 
 study = optuna.create_study(direction='maximize')
-study.optimize(objective, n_trials=20, timeout=None)
+study.optimize(objective, n_trials=1, timeout=None)  # Increased n_trials for better hyperparameter exploration
 
-logging.info("Best trial:")
+logging.info("===== Best Trial =====")
 best_trial = study.best_trial
 
-logging.info(f"  Value: {best_trial.value}")
+logging.info(f"  Value (Custom Score): {best_trial.value}")
 logging.info("  Params: ")
 for key, value in best_trial.params.items():
     logging.info(f"    {key}: {value}")
@@ -553,7 +540,7 @@ for key, value in best_trial.params.items():
 def train_best_model(trial):
     """
     Trains the best model with the best hyperparameters found by Optuna.
-    
+
     Args:
         trial (optuna.trial.FrozenTrial): Best trial object from Optuna study.
     """
@@ -570,7 +557,7 @@ def train_best_model(trial):
     gamma = trial.params['gamma']
     alpha = trial.params['alpha']
 
-    num_epochs = 50  # Increase epochs for final training
+    num_epochs = 5  # Increased epochs for final training
 
     # Get model
     models_dict = get_models()
@@ -589,11 +576,22 @@ def train_best_model(trial):
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
 
     # Mixed Precision Scaler
-    scaler = torch.amp.GradScaler()  # Updated to use torch.amp instead of torch.cuda.amp
+    scaler = torch.amp.GradScaler("cuda")  # Updated to use torch.cuda.amp
 
     best_custom_score = 0
     early_stopping_patience = 10
     patience_counter = 0
+
+    # Initialize model_info dictionary
+    model_info = {
+        'model_name': model_name,
+        'img_size': img_size,
+        'batch_size': batch_size,
+        'learning_rate': lr,
+        'weight_decay': weight_decay,
+        'gamma': gamma,
+        'alpha': alpha
+    }
 
     for epoch in range(num_epochs):
         logging.info(f"Epoch {epoch+1}/{num_epochs}")
@@ -667,22 +665,23 @@ def train_best_model(trial):
         # Checkpointing based on custom score
         if custom_score > best_custom_score:
             best_custom_score = custom_score
-            # Save the underlying model's state_dict
+            # Save the best model from final training with a different name
+            save_path_final = 'checkpoints/best_model_final.pth'  # Changed filename
             if isinstance(model, nn.DataParallel):
-                torch.save(model.module.state_dict(), 'checkpoints/best_model.pth')
+                torch.save(model.module.state_dict(), save_path_final)
             else:
-                torch.save(model.state_dict(), 'checkpoints/best_model.pth')
-            logging.info(f"Best model saved with Val Score: {best_custom_score:.4f}")
+                torch.save(model.state_dict(), save_path_final)
+            logging.info(f"Best final model saved with Val Score: {best_custom_score:.4f}")
             patience_counter = 0
 
             # Save model architecture name
-            model_info = {
+            model_info_current = {
                 'model_name': model_name,
                 'img_size': img_size
             }
-            with open('checkpoints/model_info.json', 'w') as f:
-                json.dump(model_info, f)
-            logging.info("Model architecture information saved to 'checkpoints/model_info.json'.")
+            with open('checkpoints/model_info_final.json', 'w') as f:
+                json.dump(model_info_current, f)
+            logging.info("Final model architecture information saved to 'checkpoints/model_info_final.json'.")
 
         else:
             patience_counter += 1
@@ -695,9 +694,9 @@ def train_best_model(trial):
 
     # Load best model
     if isinstance(model, nn.DataParallel):
-        model.module.load_state_dict(torch.load('checkpoints/best_model.pth'))
+        model.module.load_state_dict(torch.load('checkpoints/best_model_final.pth'))
     else:
-        model.load_state_dict(torch.load('checkpoints/best_model.pth'))
+        model.load_state_dict(torch.load('checkpoints/best_model_final.pth'))
     model.eval()
 
     # Final Evaluation
@@ -730,16 +729,30 @@ def train_best_model(trial):
     logging.info(f"Val Loss: {avg_val_loss:.4f} | Val Acc: {val_acc:.2f}% | Val Score: {custom_score:.4f}")
 
     # Save the final model
+    save_path_final = 'checkpoints/final_model_final.pth'  # Changed filename to differentiate from Optuna best
     if isinstance(model, nn.DataParallel):
-        torch.save(model.module.state_dict(), 'checkpoints/final_model.pth')
+        torch.save(model.module.state_dict(), save_path_final)
     else:
-        torch.save(model.state_dict(), 'checkpoints/final_model.pth')
-    logging.info("Final model saved as 'checkpoints/final_model.pth'.")
-    
+        torch.save(model.state_dict(), save_path_final)
+    logging.info(f"Final model saved as '{save_path_final}'.")
+
     # Optionally, save the model architecture info for the final model
-    with open('checkpoints/final_model_info.json', 'w') as f:
+    with open('checkpoints/final_model_info_final.json', 'w') as f:
         json.dump(model_info, f)
-    logging.info("Final model architecture information saved to 'checkpoints/final_model_info.json'.")
+    logging.info("Final model architecture information saved to 'checkpoints/final_model_info_final.json'.")
+
+    # ===============================
+    # 15. Print Final Summary
+    # ===============================
+
+    logging.info("===== Best Model Configuration =====")
+    for key, value in model_info.items():
+        logging.info(f"{key}: {value}")
+
+    logging.info("===== Final Evaluation Metrics =====")
+    logging.info(f"Validation Loss: {avg_val_loss:.4f}")
+    logging.info(f"Validation Accuracy: {val_acc:.2f}%")
+    logging.info(f"Custom Score: {custom_score:.4f}")
 
 # ===============================
 # 14. Execute Training of Best Model
