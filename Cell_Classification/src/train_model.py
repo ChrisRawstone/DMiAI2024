@@ -63,27 +63,13 @@ logging.getLogger('').addHandler(console)
 
 logging.info(f"Number of GPUs available: {num_gpus}")
 
-# Create necessary directories
-os.makedirs('plots', exist_ok=True)
-os.makedirs('checkpoints', exist_ok=True)
-
 
 # Create directories
 os.makedirs('plots', exist_ok=True)
 os.makedirs('checkpoints', exist_ok=True)
 os.makedirs('logs', exist_ok=True)
 
-# Setup logging
-logging.basicConfig(
-    filename='logs/training.log',
-    level=logging.INFO,
-    format='%(asctime)s %(levelname)s %(message)s',
-)
-console = logging.StreamHandler()
-console.setLevel(logging.INFO)
-formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
-console.setFormatter(formatter)
-logging.getLogger('').addHandler(console)
+
 
 # ===============================
 # 2. Custom Score Function
