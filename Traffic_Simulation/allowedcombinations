@@ -1,0 +1,10 @@
+allowed_combinations = [
+    AllowedGreenSignalCombinationDto(name='A1', groups=['A1LeftTurn', 'A2', 'A1RightTurn']),
+    AllowedGreenSignalCombinationDto(name='A1LeftTurn', groups=['A1', 'A2LeftTurn']),
+    AllowedGreenSignalCombinationDto(name='A1RightTurn', groups=['A1', 'A2RightTurn', 'B1RightTurn']),
+    AllowedGreenSignalCombinationDto(name='A2', groups=['A2LeftTurn', 'A2RightTurn', 'A1']),
+    AllowedGreenSignalCombinationDto(name='A2RightTurn', groups=['A2', 'A2LeftTurn', 'B2', 'A1RightTurn', 'B1RightTurn']),
+    AllowedGreenSignalCombinationDto(name='B1', groups=['B1RightTurn', 'B2']),
+    AllowedGreenSignalCombinationDto(name='B1RightTurn', groups=['B1', 'A2RightTurn', 'A1RightTurn']),
+    AllowedGreenSignalCombinationDto(name='B2', groups=['B1'])
+]
