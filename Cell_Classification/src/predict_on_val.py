@@ -1,111 +1,160 @@
-# predict_on_eval.py
+# evaluation.py
 
 import os
+import json
+import argparse
+import torch
 import pandas as pd
-import numpy as np
-from src.utils import load_model, load_sample  # Import necessary functions from utils
-from src.predict import predict
-import base64
-from sklearn.metrics import precision_score, recall_score, f1_score
-import joblib
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 
-# Define paths
-model_path = "models/svm_model.pkl"  # Path to the saved model
-validation_csv_path = "data/validation.csv"  # CSV containing filenames and labels
-validation_dir = "data/validation"  # Directory containing validation images
+from predict import (
+    get_transforms,
+    get_model,
+    load_model,
+    preprocess_image,
+    predict
+)
 
-# Load the trained model
-model = load_model(model_path)
+def main():
+    parser = argparse.ArgumentParser(description="Evaluation Script")
+    
+    # Updated arguments with default values for validation
+    parser.add_argument(
+        '--image_dir',
+        type=str,
+        default='data/validation',  # Default path to the validation images folder
+        help='Path to the directory containing evaluation images. Default is "validation".'
+    )
+    parser.add_argument(
+        '--labels_csv',
+        type=str,
+        default='data/validation.csv',  # Default path to the validation labels CSV
+        help='Path to the CSV file containing image labels. Default is "validation.csv".'
+    )
+    parser.add_argument(
+        '--model_checkpoint',
+        type=str,
+        default='checkpoints/final_model.pth',
+        help='Path to the model checkpoint. Default is "checkpoints/final_model.pth".'
+    )
+    parser.add_argument(
+        '--model_info',
+        type=str,
+        default='checkpoints/final_model_info.json',
+        help='Path to the model info JSON. Default is "checkpoints/final_model_info.json".'
+    )
+    parser.add_argument(
+        '--threshold',
+        type=float,
+        default=0.5,
+        help='Threshold for classification. Default is 0.5.'
+    )
+    
+    args = parser.parse_args()
 
-# Check if the validation CSV exists
-if not os.path.exists(validation_csv_path):
-    print(f"Validation CSV '{validation_csv_path}' does not exist.")
-    exit(1)
+    # Display the configuration being used
+    print("Evaluation Configuration:")
+    print(f"Image Directory : {args.image_dir}")
+    print(f"Labels CSV      : {args.labels_csv}")
+    print(f"Model Checkpoint: {args.model_checkpoint}")
+    print(f"Model Info      : {args.model_info}")
+    print(f"Threshold       : {args.threshold}\n")
+    
+    # Check device
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f"Using device: {device}\n")
 
-# Load the validation CSV file
-validation_data = pd.read_csv(validation_csv_path)
+    # Load model
+    if not os.path.exists(args.model_checkpoint):
+        raise FileNotFoundError(f"Model checkpoint not found: {args.model_checkpoint}")
+    if not os.path.exists(args.model_info):
+        raise FileNotFoundError(f"Model info file not found: {args.model_info}")
 
-# Ensure that the 'image_id' column is of string type (remove leading/trailing spaces in column names if any)
-validation_data.columns = validation_data.columns.str.strip()
-validation_data['image_id'] = validation_data['image_id'].astype(str)
+    model, img_size, model_info = load_model(args.model_checkpoint, args.model_info, device)
+    print(f"Loaded model architecture: {model_info['model_name']} with image size: {img_size}\n")
 
-# Format image_id as a 3-digit string if needed and add the file extension
-validation_data['image_id'] = validation_data['image_id'].str.zfill(3) + ".tif"
+    # Get transforms
+    transform = get_transforms(img_size=img_size)
 
-# Extract filenames and corresponding labels
-file_label_dict = dict(zip(validation_data['image_id'], validation_data['is_homogenous']))
+    # Load evaluation data
+    if not os.path.exists(args.labels_csv):
+        raise FileNotFoundError(f"Labels CSV file not found: {args.labels_csv}")
+    
+    df = pd.read_csv(args.labels_csv)
+    
+    # Validate CSV columns
+    required_columns = {'image_id', 'is_homogenous'}
+    if not required_columns.issubset(df.columns):
+        raise ValueError(f"CSV file must contain the following columns: {required_columns}")
+    
+    image_ids = df['image_id'].tolist()
+    labels = df['is_homogenous'].tolist()
 
-# Initialize counters for class-wise metrics
-n_0, n_1 = 0, 0  # Total samples for each class
-a_0, a_1 = 0, 0  # Correctly predicted samples for each class
+    predictions = []
+    ground_truths = []
 
-# Lists to hold ground truth and predicted labels for calculating metrics
-true_labels = []
-predicted_labels = []
+    print("Starting predictions...\n")
+    
+    for idx, (img_id, label) in enumerate(zip(image_ids, labels), start=1):
+        # Convert img_id to integer and format filename
+        try:
+            img_id_int = int(img_id)
+        except ValueError:
+            print(f"[{idx}/{len(image_ids)}] Invalid image_id '{img_id}'. Skipping.")
+            continue
 
-# Load the trained model
-model_path = "models/svm_model.pkl"  # Path to the saved model
-model = joblib.load(model_path)
-print(f"Model loaded from {model_path}")
+        # Format the image filename with leading zeros and .tif extension
+        img_filename = f"{img_id_int:03d}.tif"  # Adjust '03d' if necessary
+        full_image_path = os.path.join(args.image_dir, img_filename)
+        
+        if not os.path.exists(full_image_path):
+            print(f"[{idx}/{len(image_ids)}] Image not found: {full_image_path}. Skipping.")
+            continue
+        try:
+            image_tensor = preprocess_image(full_image_path, transform, device)
+            prediction = predict(image_tensor, model, device, threshold=args.threshold)
+            predictions.append(prediction)
+            ground_truths.append(int(label))
+            print(f"[{idx}/{len(image_ids)}] Processed: {img_filename} | Prediction: {'Homogeneous' if prediction == 1 else 'Heterogeneous'} | Ground Truth: {'Homogeneous' if label == 1 else 'Heterogeneous'}")
+        except Exception as e:
+            print(f"[{idx}/{len(image_ids)}] Error processing image {full_image_path}: {e}. Skipping.")
+            continue
 
-# Check if the validation directory exists
-if os.path.exists(validation_dir):
-    # Iterate through each image file listed in the validation CSV
-    for filename, true_label in file_label_dict.items():
-        # Construct the full path to the image
-        image_path = os.path.join(validation_dir, filename)
+    # Check if any predictions were made
+    if not predictions:
+        print("No predictions were made. Please check your data and try again.")
+        return
 
-        # Check if the image file exists in the directory
-        if os.path.isfile(image_path):
-            try:
-                # Read the image file as bytes
-                with open(image_path, "rb") as img_file:
-                    encoded_img = base64.b64encode(img_file.read()).decode('utf-8')
-                
-                # Use load_sample to decode and load the image
-                sample = load_sample(encoded_img)
-                image = sample["image"]
+    # Compute evaluation metrics
+    accuracy = accuracy_score(ground_truths, predictions)
+    precision = precision_score(ground_truths, predictions, zero_division=0)
+    recall = recall_score(ground_truths, predictions, zero_division=0)
+    f1 = f1_score(ground_truths, predictions, zero_division=0)
 
-                # Predict using the loaded model
-                prediction = predict(image)
+    # Compute custom Score
+    # a0: Correctly predicted label 0
+    # a1: Correctly predicted label 1
+    # n0: Total true label 0
+    # n1: Total true label 1
 
-                # Append to the lists for metrics calculation
-                true_labels.append(true_label)
-                predicted_labels.append(prediction)
+    a0 = sum((gt == 0 and pred == 0) for gt, pred in zip(ground_truths, predictions))
+    a1 = sum((gt == 1 and pred == 1) for gt, pred in zip(ground_truths, predictions))
+    n0 = sum(gt == 0 for gt in ground_truths)
+    n1 = sum(gt == 1 for gt in ground_truths)
 
-                # Increment total counts for each class
-                if true_label == 0:
-                    n_0 += 1
-                    if prediction == 0:
-                        a_0 += 1
-                elif true_label == 1:
-                    n_1 += 1
-                    if prediction == 1:
-                        a_1 += 1
-            except Exception as e:
-                print(f"Error processing image '{filename}': {e}")
-        else:
-            print(f"Image file '{filename}' listed in '{validation_csv_path}' not found in directory '{validation_dir}'.")
-
-    # Calculate precision, recall, and F1 score
-    precision = precision_score(true_labels, predicted_labels, average='binary', pos_label=1)
-    recall = recall_score(true_labels, predicted_labels, average='binary', pos_label=1)
-    f1 = f1_score(true_labels, predicted_labels, average='binary', pos_label=1)
-
-    # Calculate custom score using the provided formula
-    if n_0 > 0 and n_1 > 0:
-        custom_score = (a_0 * a_1) / (n_0 * n_1)
+    # Handle division by zero
+    if n0 == 0 or n1 == 0:
+        score = 0.0
+        print("\nWarning: One of the classes has zero instances. Custom Score set to 0.0.")
     else:
-        custom_score = 0  # Avoid division by zero
+        score = (a0 * a1) / (n0 * n1)
 
-    # Print out the metrics
-    print(f"Total samples from class 0 (Heterogeneous): {n_0}")
-    print(f"Total samples from class 1 (Homogeneous): {n_1}")
-    print(f"Correctly predicted samples from class 0 (Heterogeneous): {a_0}")
-    print(f"Correctly predicted samples from class 1 (Homogeneous): {a_1}")
+    print("\nEvaluation Metrics:")
+    print(f"Accuracy : {accuracy:.4f}")
     print(f"Precision: {precision:.4f}")
-    print(f"Recall: {recall:.4f}")
-    print(f"F1 Score: {f1:.4f}")
-    print(f"Custom Score: {custom_score:.4f}")
-else:
-    print(f"Validation directory '{validation_dir}' does not exist.")
+    print(f"Recall   : {recall:.4f}")
+    print(f"F1 Score : {f1:.4f}")
+    print(f"Custom Score: {score:.4f}")
+
+if __name__ == "__main__":
+    main()
