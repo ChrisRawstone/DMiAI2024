@@ -63,6 +63,7 @@ def predict_endpoint(request: CellClassificationPredictRequestDto):
             raise TypeError("Decoded image is not a NumPy array.")
         
         counter += 1
+        
         # Save the image as a 16-bit .tif file
         save_path = os.path.join("data/saved_images", f"{counter}".zfill(3)+".tif")
         save_image_as_tif(image, save_path)

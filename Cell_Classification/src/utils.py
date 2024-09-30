@@ -1,5 +1,4 @@
 # utils.py
-
 import os
 import json
 import torch
@@ -9,6 +8,13 @@ import cv2
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 from torchvision import models
+import os
+import numpy as np
+import cv2
+import base64 
+from PIL import Image
+from skimage.feature import hog
+import joblib
 
 def get_transforms(img_size=224):
     """
@@ -174,18 +180,6 @@ def predict_batch(image_tensors, model, device, threshold=0.5):
 
 
 
-
-import os
-import numpy as np
-import cv2
-import base64 
-from PIL import Image
-from skimage.feature import hog
-import joblib
-
-# Set the desired image size (e.g., 128x128) for resizing
-IMAGE_SIZE = (128, 128)
-
 def decode_image(encoded_img: str) -> np.ndarray:
     """
     Decodes a base64 encoded image string to a NumPy array.
@@ -268,8 +262,6 @@ def preprocess_image(image: np.ndarray) -> np.ndarray:
     )
 
     return hog_features.reshape(1, -1)  # Reshape to match the input format expected by the model
-
-
 
 
 def save_image_as_tif(image: np.ndarray, output_path: str) -> None:
