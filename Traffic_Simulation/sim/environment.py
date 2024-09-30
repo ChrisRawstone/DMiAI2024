@@ -15,8 +15,8 @@ import pathlib
 
 from loguru import logger
 
-sumo_version = "sumo-gui"
-sleep_time = 0.1
+sumo_version = "sumo"
+sleep_time = 0
 
 from dtos import (
     TrafficSimulationPredictRequestDto, VehicleDto, SignalDto, LegDto, AllowedGreenSignalCombinationDto
@@ -471,7 +471,8 @@ class TrafficSimulationEnvHandler():
             self._run_one_tick()
 
         while True:
-            logger.info(f'Traffic simulation - tick {self.simulation_ticks}....')
+            if self.simulation_ticks % 100 == 0:
+                logger.info(f'Traffic simulation - tick {self.simulation_ticks}....')
             
             if self.simulation_ticks < (self._test_duration_seconds + self.warm_up_ticks):
                 self._run_one_tick()
@@ -482,6 +483,7 @@ class TrafficSimulationEnvHandler():
 
         self._traci_connection.close()
         self._simulation_is_running = False
+        print('Reward: ', self._total_score)
 
 
 
