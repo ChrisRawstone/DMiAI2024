@@ -1,4 +1,4 @@
-# evaluation.py
+# predict_on_eval.py
 
 import os
 import json
@@ -6,6 +6,9 @@ import argparse
 import torch
 import pandas as pd
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+from src.utils import set_seed
+
+
 
 from predict import (
     get_transforms,
@@ -16,6 +19,8 @@ from predict import (
 )
 
 def main():
+    set_seed(42)
+
     parser = argparse.ArgumentParser(description="Evaluation Script")
     
     # Updated arguments with default values for validation

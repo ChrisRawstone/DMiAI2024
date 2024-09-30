@@ -182,63 +182,18 @@ import base64
 from PIL import Image
 from skimage.feature import hog
 import joblib
+import random
 
 # Set the desired image size (e.g., 128x128) for resizing
-IMAGE_SIZE = (128, 128)
+IMAGE_SIZE = (224, 224)
 
-def decode_image(encoded_img: str) -> np.ndarray:
-    """
-    Decodes a base64 encoded image string to a NumPy array.
 
-    Args:
-        encoded_img (str): Base64 encoded image string.
+def set_seed(seed=42):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
 
-    Returns:
-        np.ndarray: Decoded image.
-    """
-    try:
-        # Decode the base64 string to bytes
-        img_data = base64.b64decode(encoded_img)
-        # Convert bytes data to NumPy array
-        np_arr = np.frombuffer(img_data, np.uint8)
-        # Decode the image data using OpenCV
-        image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-        if image is None:
-            raise ValueError("Image decoding resulted in None.")
-        return image
-    except Exception as e:
-        raise ValueError(f"Failed to decode image: {e}")
-
-def load_sample(encoded_img: str) -> dict:
-    """
-    Loads and decodes the sample image.
-
-    Args:
-        encoded_img (str): Base64 encoded image string.
-
-    Returns:
-        dict: Dictionary containing the image.
-    """
-    image = decode_image(encoded_img)  # Decode the image
-    return {
-        "image": image
-    }
-
-def load_model(model_path: str):
-    """
-    Load the trained model from the given path.
-
-    Args:
-        model_path (str): Path to the saved model.
-
-    Returns:
-        model: The loaded machine learning model.
-    """
-    if not os.path.exists(model_path):
-        raise FileNotFoundError(f"Model file '{model_path}' not found.")
-    model = joblib.load(model_path)
-    print(f"Model loaded from {model_path}")
-    return model
 
 def preprocess_image(image: np.ndarray) -> np.ndarray:
     """

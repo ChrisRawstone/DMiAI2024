@@ -1,145 +1,55 @@
-import torch
-from torch.utils.data import Dataset, DataLoader
-from torchvision import transforms
-from PIL import Image, ImageOps
-from pathlib import Path
 import os
-import sys
-import pandas as pd
+import numpy as np
+from PIL import Image
+import base64
+import io
 
+def save_image_as_tif(image, filename) -> None:
+    # Print the type and some information about the input image
+    print(f"Input type: {type(image)}")
 
-from src.utils import tif_to_ndarray
+    # Handle different types of inputs
+    if isinstance(image, str):
+        print(f"String length: {len(image)}")  # Print the length of the string for more info
+        if os.path.isfile(image):
+            # If the input is a valid file path, open and load it as an image
+            print("Detected a file path. Loading the image from the file path.")
+            image = Image.open(image)
+        else:
+            # Check if the string might be base64 encoded image data
+            try:
+                # Attempt to decode the string as base64 and load it as an image
+                image_data = base64.b64decode(image)
+                image = Image.open(io.BytesIO(image_data))
+                print("Successfully decoded base64 image data.")
+            except Exception as e:
+                print(f"Failed to decode base64 image data: {e}")
+                raise ValueError("The provided image input appears to be a string but not a valid file path or base64 encoded image data.")
+    elif isinstance(image, np.ndarray):
+        # If it's a NumPy array, convert it to a PIL Image object
+        print(f"Converting NumPy array of shape {image.shape} to PIL Image.")
+        image = Image.fromarray(image.astype(np.uint16), mode='I;16')
+    elif not isinstance(image, Image.Image):
+        raise ValueError("The image should be a valid file path (string), a base64-encoded string, a NumPy array, or a PIL Image object.")
 
-# Get the script's directory
-script_dir = Path(__file__).resolve()
-# Go two levels up from the script's directory
-parent_parent_dir = script_dir.parent.parent.parent
-# Change the current working directory to the parent-parent directory
-os.chdir(parent_parent_dir)
-
-# Define PadToSize to work with transforms.Compose
-class PadToSize:
-    def __init__(self, target_width, target_height):
-        self.target_width = target_width
-        self.target_height = target_height
-
-    def __call__(self, img):
-        """
-        Make PadToSize callable so it can be used inside transforms.Compose.
+    # Define the target directory
+    target_directory = 'data/validation16bit'
+    
+    # Create the directory if it doesn't exist
+    if not os.path.exists(target_directory):
+        os.makedirs(target_directory)
         
-        Args:
-            img (PIL.Image): The image to pad.
+    # Construct the complete file path
+    file_path = os.path.join(target_directory, f"{filename}")
+    
+    # Save the image as a 16-bit grayscale TIFF
+    if isinstance(image, Image.Image):
+        image.save(file_path, format='TIFF')
+        print(f"Image saved at: {file_path}")
+    else:
+        raise TypeError("The final image object is not a PIL Image and cannot be saved.")
 
-        Returns:
-            PIL.Image: Padded image.
-        """
-        width, height = img.size
-        
-        # Calculate padding required on each side
-        pad_width = max(0, (self.target_width - width) // 2)
-        pad_height = max(0, (self.target_height - height) // 2)
-        
-        # Apply padding to the image
-        padding = (pad_width, pad_height, self.target_width - width - pad_width, self.target_height - height - pad_height)
-        padded_img = ImageOps.expand(img, padding)
-        
-        return padded_img
-
-class LoadTifDataset(Dataset):
-    def __init__(self, image_dir, csv_file_path, transform=None):
-        """
-        Custom Dataset for loading .tif images and their labels from a CSV file.
-
-        Args:
-            image_dir (str): Path to the folder containing .tif images.
-            csv_file_path (str): Path to the CSV file with image file names and labels.
-            transform (callable, optional): Optional transform to be applied on a sample.
-        """
-        self.image_dir = image_dir
-        #script_dir = os.path.dirname(os.path.realpath(__file__))
-        self.labels_df = pd.read_csv(csv_file_path)
-        self.transform = transform
-
-    def __len__(self):
-        # Returns the total number of samples (rows) in the dataset
-        return len(self.labels_df)
-
-    def load_data(self, idx):
-        """
-        Loads a single image and its label given an index.
-
-        Args:
-            idx (int): Index of the image in the CSV file.
-
-        Returns:
-            tuple: (image, label) where image is the loaded and optionally transformed image and
-                label is a tensor representing the image's label.
-        """
-        # Get the image file name and label from the CSV file
-        img_name = str(self.labels_df.iloc[idx, 0]).zfill(3)  # Zero-pad to 3 digits
-        label = self.labels_df.iloc[idx, 1]                   # Second column: label (0 or 1)
-        
-        # Full path to the .tif image
-        img_path = os.path.join(self.image_dir, f"{img_name}.tif")
-        
-        # Load the .tif image using tif_to_ndarray
-        image = tif_to_ndarray(img_path)
-        
-        # Check if the image was loaded correctly
-        if image is None:
-            raise ValueError(f"Failed to load image at path: {img_path}")
-        
-        # Convert ndarray to PIL Image for transformations
-        image = Image.fromarray(image)
-        image = image.convert('RGB')
-        
-        # Apply the transformations, including padding
-        if self.transform:
-            image = self.transform(image)
-        
-        return image, torch.tensor(label, dtype=torch.long)
-
-    def __getitem__(self, idx):
-        """
-        PyTorch will call this method to get a single image-label pair during data loading.
-
-        Args:
-            idx (int): Index of the image in the dataset.
-
-        Returns:
-            tuple: (image, label) as returned by load_data function.
-        """
-        return self.load_data(idx)
-
-# # Define the padding size
-# target_width = 1500
-# target_height = 1470
-
-# # Define transformations for training data
-# train_transform = transforms.Compose([
-#     PadToSize(target_width=target_width, target_height=target_height),
-#     transforms.Resize((224, 224)),
-#     transforms.RandomHorizontalFlip(),
-#     transforms.RandomRotation(15),
-#     transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
-#     transforms.Grayscale(num_output_channels=3),
-#     transforms.ToTensor(),
-# ])
-
-# # Define transformations for validation data (no augmentation)
-# val_transform = transforms.Compose([
-#     PadToSize(target_width=target_width, target_height=target_height),
-#     transforms.Resize((224, 224)),
-#     transforms.Grayscale(num_output_channels=3),
-#     transforms.ToTensor(),
-# ])
-
-# Example usage
-# image_dir = "data/training"
-# csv_file_path = "data/training.csv"
-
-# # Create the dataset with padding transformation
-# dataset = LoadTifDataset(image_dir=image_dir, csv_file_path=csv_file_path, transform=transform)
-
-# # Create the dataloader for batch processing
-# dataloader = DataLoader(dataset, batch_size=16, shuffle=True)
+# Example usage:
+# Assuming the image is a NumPy array of 16-bit grayscale values
+# np_image = np.random.randint(0, 65535, (256, 256), dtype=np.uint16)
+# save_image_as_tif(np_image, "example_image")

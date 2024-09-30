@@ -1,3 +1,5 @@
+# train_model.py
+
 import os
 import cv2
 import base64
@@ -16,6 +18,8 @@ from torchvision.models import ViT_B_16_Weights
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 
+from src.utils import set_seed
+
 from sklearn.metrics import accuracy_score, roc_auc_score
 from tqdm import tqdm
 from PIL import Image
@@ -31,12 +35,7 @@ import json
 # 1. Setup and Configuration
 # ===============================
 
-def set_seed(seed=42):
-    """Set random seeds for reproducibility."""
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
+
 
 set_seed(42)
 
@@ -149,40 +148,7 @@ logging.getLogger('').addHandler(console)
 # 2. Data Decoding Functions
 # ===============================
 
-def decode_image(encoded_img: str) -> np.ndarray:
-    """
-    Decodes a base64 encoded image string to a NumPy array.
 
-    Args:
-        encoded_img (str): Base64 encoded image string.
-
-    Returns:
-        np.ndarray: Decoded image.
-    """
-    try:
-        img_data = base64.b64decode(encoded_img)
-        np_arr = np.frombuffer(img_data, np.uint8)
-        image = cv2.imdecode(np_arr, cv2.IMREAD_GRAYSCALE)
-        if image is None:
-            raise ValueError("Image decoding resulted in None.")
-        return image
-    except Exception as e:
-        raise ValueError(f"Failed to decode image: {e}")
-
-def load_sample(encoded_img: str) -> dict:
-    """
-    Loads and decodes the sample image.
-
-    Args:
-        encoded_img (str): Base64 encoded image string.
-
-    Returns:
-        dict: Dictionary containing the image.
-    """
-    image = decode_image(encoded_img)
-    return {
-        "image": image
-    }
 
 # ===============================
 # 4. Custom Dataset
@@ -606,7 +572,7 @@ def objective(trial):
 # Ensure that the DataParallel setup is correctly applied within the objective function.
 
 study = optuna.create_study(direction='maximize')
-study.optimize(objective, n_trials=20, timeout=None)
+study.optimize(objective, n_trials=5, timeout=None)
 
 logging.info("Best trial:")
 best_trial = study.best_trial
