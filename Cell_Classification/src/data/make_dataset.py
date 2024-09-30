@@ -12,6 +12,15 @@ import albumentations as A
 from albumentations.pytorch import ToTensorV2
 import matplotlib.pyplot as plt
 
+from pathlib import Path
+from typing import Tuple
+
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
+from torch.utils.data import DataLoader, WeightedRandomSampler
+import numpy as np
+import logging
+
 def setup_working_directory():
     """
     Change the current working directory to the parent-parent directory of the script's directory.
@@ -20,6 +29,8 @@ def setup_working_directory():
     parent_parent_dir = script_dir.parent.parent.parent
     os.chdir(parent_parent_dir)
     print(f"Changed working directory to: {parent_parent_dir}")
+
+setup_working_directory()
 
 def decode_image(encoded_img: str) -> np.ndarray:
     """
@@ -63,8 +74,7 @@ def convert_16bit_to_8bit(image: np.ndarray) -> np.ndarray:
         raise ValueError("Image is not 16-bit.")
 
     # Normalize the image to 0-255
-    image_8bit = cv2.normalize(image, None, 0, 255, cv2.NORM_MINMAX)
-    image_8bit = image_8bit.astype(np.uint8)
+    image_8bit = cv2.normalize(image, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
     return image_8bit
 
 class LoadTifDataset(Dataset):
@@ -134,7 +144,127 @@ class LoadTifDataset(Dataset):
         """
         return self.load_data(idx)
 
-setup_working_directory()
+
+def get_transforms(img_size: int) -> Tuple[A.Compose, A.Compose]:
+    """
+    Define data augmentation and preprocessing transforms for training and validation.
+
+    Args:
+        img_size (int): Image size for resizing.
+
+    Returns:
+        Tuple[A.Compose, A.Compose]: Training and validation transforms.
+    """
+    train_transform = A.Compose([
+        A.Resize(img_size, img_size),
+        A.HorizontalFlip(p=0.5),
+        A.VerticalFlip(p=0.5),
+        A.Rotate(limit=30, p=0.5),
+        A.RandomBrightnessContrast(p=0.5),
+        A.RandomGamma(p=0.5),
+        A.GaussianBlur(blur_limit=3, p=0.3),
+        A.Normalize(mean=(0.485, 0.456, 0.406),  # Using ImageNet means
+                    std=(0.229, 0.224, 0.225)),   # Using ImageNet stds
+        ToTensorV2(),
+    ])
+
+    val_transform = A.Compose([
+        A.Resize(img_size, img_size),
+        A.Normalize(mean=(0.485, 0.456, 0.406),  # Using ImageNet means
+                    std=(0.229, 0.224, 0.225)),   # Using ImageNet stds
+        ToTensorV2(),
+    ])
+
+    logging.info("Transforms for training and validation have been defined.")
+    return train_transform, val_transform
+
+
+def create_sampler(labels: np.ndarray) -> WeightedRandomSampler:
+    """
+    Create a WeightedRandomSampler to handle class imbalance.
+
+    Args:
+        labels (np.ndarray): Array of labels.
+
+    Returns:
+        WeightedRandomSampler: Sampler object.
+    """
+    class_counts = np.bincount(labels)
+    total_samples = len(labels)
+    num_classes = len(class_counts)
+    if num_classes < 2:
+        raise ValueError("Number of classes should be at least 2 for WeightedRandomSampler.")
+
+    # Compute weights for each class
+    weights_per_class = total_samples / (num_classes * class_counts)
+    weights = weights_per_class[labels]
+
+    sampler = WeightedRandomSampler(weights, num_samples=total_samples, replacement=True)
+    logging.info("WeightedRandomSampler has been created.")
+    return sampler
+
+
+def get_dataloaders(batch_size: int, img_size: int) -> Tuple[DataLoader, DataLoader]:
+    """
+    Returns DataLoader objects for training and validation datasets.
+
+    Args:
+        batch_size (int): Batch size for DataLoaders.
+        img_size (int): Image size for resizing.
+
+    Returns:
+        Tuple[DataLoader, DataLoader]: Training and validation DataLoaders.
+    """
+    # Define paths
+    train_image_dir = Path("data/training")
+    train_csv_path = Path("data/training.csv")
+    val_image_dir = Path("data/validation16bit")
+    val_csv_path = Path("data/validation.csv")
+
+    # Get transforms
+    train_transform, val_transform = get_transforms(img_size)
+
+    # Create the datasets
+    train_dataset = LoadTifDataset(
+        image_dir=train_image_dir,
+        csv_file_path=train_csv_path,
+        transform=train_transform
+    )
+    val_dataset = LoadTifDataset(
+        image_dir=val_image_dir,
+        csv_file_path=val_csv_path,
+        transform=val_transform
+    )
+
+    logging.info("Datasets for training and validation have been created.")
+
+    # Extract labels from the training dataset
+    train_labels = train_dataset.labels_df.iloc[:, 1].values  # assuming labels are in the second column
+
+    # Create sampler for training
+    sampler = create_sampler(train_labels)
+
+    # Create DataLoaders
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        sampler=sampler,
+        num_workers=8,
+        pin_memory=True
+    )
+
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=8,
+        pin_memory=True
+    )
+
+    logging.info("DataLoaders for training and validation have been initialized.")
+    return train_loader, val_loader
+
+
 # def save_images_as_grid(dataloader, classes, save_path, dataset_name):
 #     """
 #     Save all images from the dataloader in a single grid image.
@@ -260,4 +390,3 @@ setup_working_directory()
 
 # if __name__ == "__main__":
 #     main()
-setup_working_directory()
