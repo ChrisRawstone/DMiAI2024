@@ -7,12 +7,17 @@ from pydantic import BaseModel
 from sim.dtos import TrafficSimulationPredictResponseDto, TrafficSimulationPredictRequestDto, SignalDto
 from collections import defaultdict
 
-# Track waiting time for each signal group
-pair_waiting_time = defaultdict(lambda: 0)
-combination_waiting_time = defaultdict(lambda: 0)  # Initialize the missing waiting time tracker
+# Fairness parameters
+FAIRNESS_THRESHOLD = 50  # Number of ticks after which a pair must be prioritized
+MIN_GREEN_DURATION = 10   # Minimum duration a signal pair must stay green (in ticks)
+OVERLAP_DURATION = 2      # Duration where both old and new signals remain green (in ticks)
 
-HOST = "0.0.0.0"
-PORT = 8080
+# Track the last green signal pair and its activation time
+current_green_pair = None
+current_green_start_time = 0
+previous_green_pair = None  # To track the previous signal pair for overlap
+previous_green_start_time = 0
+pair_waiting_time = defaultdict(lambda: 0)
 
 app = FastAPI()
 start_time = time.time()
@@ -27,14 +32,6 @@ def hello():
 @app.get('/')
 def index():
     return "Your endpoint is running!"
-
-# Fairness parameters
-FAIRNESS_THRESHOLD = 50  # Number of ticks after which a pair must be prioritized
-MIN_GREEN_DURATION = 15  # Minimum duration a signal pair must stay green (in ticks)
-
-# Track the last green signal pair and its activation time
-current_green_pair = None
-current_green_start_time = 0
 
 def generate_unique_pairs(allowed_green_signal_combinations):
     """
@@ -54,7 +51,7 @@ def generate_unique_pairs(allowed_green_signal_combinations):
 
 @app.post('/predict', response_model=TrafficSimulationPredictResponseDto)
 def predict_endpoint(request: TrafficSimulationPredictRequestDto):
-    global current_green_pair, current_green_start_time
+    global current_green_pair, current_green_start_time, previous_green_pair, previous_green_start_time
 
     # Decode request
     vehicles = request.vehicles
@@ -99,9 +96,9 @@ def predict_endpoint(request: TrafficSimulationPredictRequestDto):
     # Increment waiting times for pairs that are not green
     for signal in signals:
         if signal.state != "green":
-            combination_waiting_time[signal.name] += 1
+            pair_waiting_time[signal.name] += 1
         else:
-            combination_waiting_time[signal.name] = 0  # Reset waiting time if it's green
+            pair_waiting_time[signal.name] = 0  # Reset waiting time if it's green
 
     # Keep the current green pair active for the minimum green duration
     if current_green_pair and (current_time - current_green_start_time) < MIN_GREEN_DURATION:
@@ -137,56 +134,47 @@ def predict_endpoint(request: TrafficSimulationPredictRequestDto):
             selected_pair = valid_pairs[0]
 
         # Set the new green pair and its start time
+        previous_green_pair = current_green_pair  # Track the previous pair for overlap
+        previous_green_start_time = current_green_start_time
         current_green_pair = selected_pair
-        current_green_start_time = current_time  # Reset timer to current tick after selection
+        current_green_start_time = current_time
         logger.info(f"Selected signal pair for green: {selected_pair}")
 
     # Set all signals in the selected pair to green, others to red
     next_signals = []
     processed_signals = set()  # Track the signals that have been processed
 
-    # First, make sure the selected pair is processed and both signals are set to green
-    logger.info(f"Setting selected pair {selected_pair} to green")
+    # Apply overlap logic: if the previous pair exists and is still within the overlap period, keep them green
+    if previous_green_pair and (current_time - previous_green_start_time) < (MIN_GREEN_DURATION + OVERLAP_DURATION):
+        logger.info(f"Keeping previous pair {previous_green_pair} green for overlap.")
+        for group in previous_green_pair:
+            if group not in processed_signals:
+                next_signals.append(SignalDto(name=group, state="green"))
+                processed_signals.add(group)
+
+    # Set the selected pair to green
     for group in selected_pair:
         if group not in processed_signals:
-            # logger.info(f"Adding signal {group} to next_signals with state green")
             next_signals.append(SignalDto(name=group, state="green"))
             processed_signals.add(group)
 
-    # Now, process the rest of the pairs and set remaining signals to red
+    # Set the rest to red
     for pair in valid_pairs:
         if pair != selected_pair:
             for group in pair:
                 if group not in processed_signals:
-                    # logger.info(f"Adding signal {group} to next_signals with state red")
                     next_signals.append(SignalDto(name=group, state="red"))
                     processed_signals.add(group)
 
-    #sort next_signals by name
+    # Sort next_signals by name for consistency
     next_signals = sorted(next_signals, key=lambda x: x.name)
 
-    # Print the current status of signals and their associated vehicle counts with color coding
+    # Log the signal states and vehicle counts
     for signal in next_signals:
-        # Find the pair the signal belongs to
-        relevant_pair = None
-        for pair in valid_pairs:
-            if signal.name in pair:
-                relevant_pair = pair
-                break
-
-        if relevant_pair:
-            # Get the vehicle count for the relevant pair
-            vehicle_count = pair_vehicle_counts.get(relevant_pair, 0)
-        else:
-            vehicle_count = 0
-
+        vehicle_count = pair_vehicle_counts.get(tuple([signal.name]), 0)
         color = "green" if signal.state == "green" else "red"
-
-        # Set the corresponding color for the log output
-        color_code = "\033[92m" if signal.state == "green" else "\033[91m"  # Green for 'green', Red for 'red'
-        reset_color = "\033[0m"  # Reset color code to default
-
-        # Log with the appropriate color and vehicle count for the pair
+        color_code = "\033[92m" if signal.state == "green" else "\033[91m"
+        reset_color = "\033[0m"
         logger.info(f"{color_code}Signal {signal.name} is {color} with {vehicle_count} vehicles.{reset_color}")
 
     # Return the next signals to the evaluation service
