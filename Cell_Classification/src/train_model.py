@@ -12,7 +12,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
 from torchvision import transforms, models
-from torchvision.models import ViT_B_16_Weights
+from torchvision.models import ViT_B_32_Weights, ResNet18_Weights, ViT_B_16_Weights, ResNet50_Weights, ResNet101_Weights, EfficientNet_B0_Weights, EfficientNet_B4_Weights, MobileNet_V3_Large_Weights
 from data.make_dataset import LoadTifDataset
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
@@ -205,32 +205,117 @@ def get_models(num_classes=1):
     """
     models_dict = {}
 
-    # Vision Transformer
+    # Vision Transformer16
     vit_weights = ViT_B_16_Weights.DEFAULT
     vit_model = models.vit_b_16(weights=vit_weights)
     in_features = vit_model.heads.head.in_features
     vit_model.heads.head = nn.Linear(in_features, num_classes)
-    models_dict['ViT'] = vit_model
+    models_dict['ViT16'] = vit_model
+    
+    # # Vision Transformer16
+    # vit_weights_h14 = ViT_H_14_Weights.DEFAULT
+    # vit_model14 = models.vit_h_14(weights=vit_weights_h14)
+    # in_features = vit_model14.heads.head.in_features
+    # vit_model14.heads.head = nn.Linear(in_features, num_classes)
+    # models_dict['ViTh14'] = vit_model14
+    
+    # Vision Transformer32
+    vit_weights32 = ViT_B_32_Weights.DEFAULT
+    vit_model32 = models.vit_b_32(weights=vit_weights32)
+    in_features = vit_model32.heads.head.in_features
+    vit_model32.heads.head = nn.Linear(in_features, num_classes)
+    models_dict['ViT32'] = vit_model32
+
+    # ResNet18
+    resnet18_weights = ResNet18_Weights.DEFAULT
+    resnet18_model = models.resnet18(weights=resnet18_weights)
+    in_features = resnet18_model.fc.in_features
+    resnet18_model.fc = nn.Linear(in_features, num_classes)
+    models_dict['ResNet18'] = resnet18_model
 
     # ResNet50
-    resnet_model = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
-    in_features = resnet_model.fc.in_features
-    resnet_model.fc = nn.Linear(in_features, num_classes)
-    models_dict['ResNet50'] = resnet_model
+    resnet50_weights = ResNet50_Weights.DEFAULT
+    resnet50_model = models.resnet50(weights=resnet50_weights)
+    in_features = resnet50_model.fc.in_features
+    resnet50_model.fc = nn.Linear(in_features, num_classes)
+    models_dict['ResNet50'] = resnet50_model
 
-    # EfficientNet
-    efficientnet_model = models.efficientnet_b0(weights=models.EfficientNet_B0_Weights.DEFAULT)
-    in_features = efficientnet_model.classifier[1].in_features
-    efficientnet_model.classifier[1] = nn.Linear(in_features, num_classes)
-    models_dict['EfficientNet'] = efficientnet_model
+    # ResNet101
+    resnet101_weights = ResNet101_Weights.DEFAULT
+    resnet101_model = models.resnet101(weights=resnet101_weights)
+    in_features = resnet101_model.fc.in_features
+    resnet101_model.fc = nn.Linear(in_features, num_classes)
+    models_dict['ResNet101'] = resnet101_model
 
-    # MobileNetV3
-    mobilenet_model = models.mobilenet_v3_large(weights=models.MobileNet_V3_Large_Weights.DEFAULT)
-    in_features = mobilenet_model.classifier[3].in_features
-    mobilenet_model.classifier[3] = nn.Linear(in_features, num_classes)
-    models_dict['MobileNetV3'] = mobilenet_model
+    # EfficientNetB0
+    efficientnet_b0_weights = EfficientNet_B0_Weights.DEFAULT
+    efficientnet_b0_model = models.efficientnet_b0(weights=efficientnet_b0_weights)
+    in_features = efficientnet_b0_model.classifier[1].in_features
+    efficientnet_b0_model.classifier[1] = nn.Linear(in_features, num_classes)
+    models_dict['EfficientNetB0'] = efficientnet_b0_model
+
+    # EfficientNetB4
+    efficientnet_b4_weights = EfficientNet_B4_Weights.DEFAULT
+    efficientnet_b4_model = models.efficientnet_b4(weights=efficientnet_b4_weights)
+    in_features = efficientnet_b4_model.classifier[1].in_features
+    efficientnet_b4_model.classifier[1] = nn.Linear(in_features, num_classes)
+    models_dict['EfficientNetB4'] = efficientnet_b4_model
+
+    # MobileNetV3 Large
+    mobilenet_v3_weights = MobileNet_V3_Large_Weights.DEFAULT
+    mobilenet_v3_model = models.mobilenet_v3_large(weights=mobilenet_v3_weights)
+    in_features = mobilenet_v3_model.classifier[3].in_features
+    mobilenet_v3_model.classifier[3] = nn.Linear(in_features, num_classes)
+    models_dict['MobileNetV3'] = mobilenet_v3_model
+
+    # DenseNet121
+    densenet_weights = models.DenseNet121_Weights.DEFAULT
+    densenet_model = models.densenet121(weights=densenet_weights)
+    in_features = densenet_model.classifier.in_features
+    densenet_model.classifier = nn.Linear(in_features, num_classes)
+    models_dict['DenseNet121'] = densenet_model
 
     return models_dict
+
+
+# def get_models(num_classes=1):
+#     """
+#     Returns a dictionary of state-of-the-art models.
+
+#     Args:
+#         num_classes (int, optional): Number of output classes. Defaults to 1.
+
+#     Returns:
+#         dict: Dictionary of models.
+#     """
+#     models_dict = {}
+
+#     # Vision Transformer
+#     vit_weights = ViT_B_16_Weights.DEFAULT
+#     vit_model = models.vit_b_16(weights=vit_weights)
+#     in_features = vit_model.heads.head.in_features
+#     vit_model.heads.head = nn.Linear(in_features, num_classes)
+#     models_dict['ViT'] = vit_model
+
+#     # ResNet50
+#     resnet_model = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
+#     in_features = resnet_model.fc.in_features
+#     resnet_model.fc = nn.Linear(in_features, num_classes)
+#     models_dict['ResNet50'] = resnet_model
+
+#     # EfficientNet
+#     efficientnet_model = models.efficientnet_b0(weights=models.EfficientNet_B0_Weights.DEFAULT)
+#     in_features = efficientnet_model.classifier[1].in_features
+#     efficientnet_model.classifier[1] = nn.Linear(in_features, num_classes)
+#     models_dict['EfficientNet'] = efficientnet_model
+
+#     # MobileNetV3
+#     mobilenet_model = models.mobilenet_v3_large(weights=models.MobileNet_V3_Large_Weights.DEFAULT)
+#     in_features = mobilenet_model.classifier[3].in_features
+#     mobilenet_model.classifier[3] = nn.Linear(in_features, num_classes)
+#     models_dict['MobileNetV3'] = mobilenet_model
+
+#     return models_dict
 
 # ===============================
 # 10. Define Focal Loss with Class Weights
@@ -318,7 +403,7 @@ def objective(trial):
     if model_name == 'ViT':
         img_size = 224  # Fixed for ViT
     else:
-        img_size = trial.suggest_categorical('img_size', [224, 256, 299, 331, 350, 400])
+        img_size = trial.suggest_categorical('img_size', [128, 224, 256, 299, 331, 350, 400, 500])
 
     batch_size = trial.suggest_categorical('batch_size', [4, 8, 16, 32, 64, 128])
     lr = trial.suggest_float('lr', 1e-6, 1e-2, log=True)
@@ -326,7 +411,7 @@ def objective(trial):
     gamma = trial.suggest_float('gamma', 1.0, 3.0)
     alpha = trial.suggest_float('alpha', 0.1, 0.9)
 
-    num_epochs = 30  # For quick experimentation; increase for better results
+    num_epochs = 50  # For quick experimentation; increase for better results
 
     # Get model
     models_dict = get_models()
