@@ -56,9 +56,9 @@ DATA_DIR_ORIG_VAL = "data/validation16bit"
 CSV_FILE_ORIG_VAL = "data/validation.csv"
 
 # Training Settings
-NUM_EPOCHS = 2  # For quick experimentation; increase for better results
-N_SPLITS = 3    # Number of folds for cross-validation
-N_TRIALS = 3    # Number of Optuna trials
+NUM_EPOCHS = 50  # For quick experimentation; increase for better results
+N_SPLITS = 5    # Number of folds for cross-validation
+N_TRIALS = 50    # Number of Optuna trials
 BATCH_SIZE_OPTIONS = [4, 8, 16, 32, 64, 128]
 IMG_SIZE_OPTIONS = [128, 224, 256, 299, 331, 350, 400, 500]
 MODEL_NAMES = [
