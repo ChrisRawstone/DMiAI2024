@@ -27,6 +27,8 @@ from PIL import Image
 import random
 import logging
 
+from src.utils import get_train_transforms, get_val_transforms
+
 # Optuna for hyperparameter tuning
 import optuna
 import json

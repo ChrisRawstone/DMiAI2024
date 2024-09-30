@@ -40,13 +40,13 @@ def main():
         '--model_checkpoint',
         type=str,
         default='checkpoints/final_model.pth',
-        help='Path to the model checkpoint. Default is "checkpoints/final_model.pth".'
+        help='Path to the model checkpoint. Default is "checkpoints/best_model.pth".'
     )
     parser.add_argument(
         '--model_info',
         type=str,
         default='checkpoints/final_model_info.json',
-        help='Path to the model info JSON. Default is "checkpoints/final_model_info.json".'
+        help='Path to the model info JSON. Default is "checkpoints/best_model_info.json".'
     )
     parser.add_argument(
         '--threshold',
