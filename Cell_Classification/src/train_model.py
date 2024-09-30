@@ -22,6 +22,27 @@ from models.model import get_models, FocalLoss, get_model_parallel, objective
 set_seed(42)
 
 # Setup logging
+def setup_logging(log_dir: Path, log_file: str = "training.log") -> None:
+    """
+    Configure logging to file and console.
+
+    Args:
+        log_dir (Path): Directory where the log file will be saved.
+        log_file (str, optional): Log file name. Defaults to "training.log".
+    """
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / log_file
+
+    # Configure the root logger
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s",
+        handlers=[
+            logging.FileHandler(log_path),
+            logging.StreamHandler()
+        ]
+    )
+    logging.info("Logging is set up.")
 log_directory = Path("logs")
 setup_logging(log_directory)
 
@@ -190,7 +211,7 @@ def objective(trial):
 # =============================================================================================
 # 4. Run Optuna Study
 # =============================================================================================
-n_trials = 40
+n_trials = 2
 study = optuna.create_study(direction='maximize')
 study.optimize(objective, n_trials=n_trials, timeout=None)  
 

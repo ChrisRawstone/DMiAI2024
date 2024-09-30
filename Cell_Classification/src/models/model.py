@@ -134,7 +134,7 @@ def objective(trial):
     gamma = trial.suggest_float('gamma', 1.0, 3.0)
     alpha = trial.suggest_float('alpha', 0.1, 0.9)
 
-    num_epochs = 50 # Fixed number of epochs
+    num_epochs = 10 # Fixed number of epochs
     
     train_loader, val_loader = get_dataloaders(batch_size, img_size)
 

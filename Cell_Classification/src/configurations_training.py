@@ -15,29 +15,6 @@ def set_seed(seed: int = 42) -> None:
     logging.info(f"Random seed set to {seed}")
 
 
-def setup_logging(log_dir: Path, log_file: str = "training.log") -> None:
-    """
-    Configure logging to file and console.
-
-    Args:
-        log_dir (Path): Directory where the log file will be saved.
-        log_file (str, optional): Log file name. Defaults to "training.log".
-    """
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_path = log_dir / log_file
-
-    # Configure the root logger
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(message)s",
-        handlers=[
-            logging.FileHandler(log_path),
-            logging.StreamHandler()
-        ]
-    )
-    logging.info("Logging is set up.")
-
-
 def get_device() -> torch.device:
     """
     Determine the device to use for computations.
