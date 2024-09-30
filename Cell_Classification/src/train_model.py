@@ -1,4 +1,4 @@
-# train_model.py
+# src/train_model.py
 
 import os
 import cv2
@@ -10,9 +10,18 @@ import json
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
+from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler, Subset
 from torchvision import transforms, models
-from torchvision.models import ViT_B_32_Weights, ResNet18_Weights, ViT_B_16_Weights, ResNet50_Weights, ResNet101_Weights, EfficientNet_B0_Weights, EfficientNet_B4_Weights, MobileNet_V3_Large_Weights
+from torchvision.models import (
+    ViT_B_32_Weights,
+    ResNet18_Weights,
+    ViT_B_16_Weights,
+    ResNet50_Weights,
+    ResNet101_Weights,
+    EfficientNet_B0_Weights,
+    EfficientNet_B4_Weights,
+    MobileNet_V3_Large_Weights,
+)
 from data.make_dataset import LoadTifDataset
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
@@ -21,13 +30,11 @@ import random
 import logging
 
 from sklearn.metrics import accuracy_score
+from sklearn.model_selection import StratifiedKFold
 from tqdm import tqdm
-import random
-import logging
 
 # Optuna for hyperparameter tuning
 import optuna
-
 
 from src.utils import calculate_custom_score
 
@@ -45,122 +52,142 @@ def set_seed(seed=42):
 set_seed(42)
 
 # Define device and check available GPUs
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 num_gpus = torch.cuda.device_count()
 
 # Setup logging early to capture GPU info
-os.makedirs('logs', exist_ok=True)
+os.makedirs("logs", exist_ok=True)
 logging.basicConfig(
-    filename='logs/training.log',
+    filename="logs/training.log",
     level=logging.INFO,
-    format='%(asctime)s %(levelname)s %(message)s',
+    format="%(asctime)s %(levelname)s %(message)s",
 )
 console = logging.StreamHandler()
 console.setLevel(logging.INFO)
-formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
+formatter = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
 console.setFormatter(formatter)
-logging.getLogger('').addHandler(console)
+logging.getLogger("").addHandler(console)
 
 logging.info(f"Number of GPUs available: {num_gpus}")
 
-
 # Create directories
-os.makedirs('plots', exist_ok=True)
-os.makedirs('checkpoints', exist_ok=True)
-os.makedirs('logs', exist_ok=True)
+os.makedirs("plots", exist_ok=True)
+os.makedirs("checkpoints", exist_ok=True)
+os.makedirs("logs", exist_ok=True)
 
 # ===============================
 # 2. Custom Score Function
 # ===============================
 
+# Assuming calculate_custom_score is defined in src/utils.py
 
 # ===============================
 # 4. Get Data and Dataloaders
 # ===============================
 
-def get_dataloaders(batch_size, img_size):
+def get_dataloaders(
+    batch_size, img_size, fold_indices=None, num_workers=8, pin_memory=True
+):
     """
-    Returns DataLoader objects for training and validation datasets.
+    Returns DataLoader objects for training, cross-validation, and original validation datasets.
 
     Args:
         batch_size (int): Batch size for DataLoaders.
         img_size (int): Image size for resizing.
+        fold_indices (tuple, optional): Tuple containing train and val indices for cross-validation.
+        num_workers (int, optional): Number of subprocesses for data loading. Defaults to 8.
+        pin_memory (bool, optional): If True, the data loader will copy tensors into CUDA pinned memory. Defaults to True.
 
     Returns:
-        tuple: Training and validation DataLoaders.
+        tuple: Depending on fold_indices, returns training and validation DataLoaders.
     """
     # Define transformations
-    train_transform = A.Compose([
-        A.Resize(img_size, img_size),
-        A.HorizontalFlip(p=0.5),
-        A.VerticalFlip(p=0.5),
-        A.Rotate(limit=30, p=0.5),
-        # A.RandomBrightnessContrast(p=0.5),
-        # A.RandomGamma(p=0.5),
-        A.GaussianBlur(blur_limit=3, p=0.3),
-        A.Normalize(mean=(0.485, 0.485, 0.485),  # Using ImageNet means  alternative : A.Normalize(mean=(0.485, 0.456, 0.406), 
-                    std=(0.229, 0.229, 0.229)),   # Using ImageNet stds  alternative : std=(0.229, 0.224, 0.225)),
-        ToTensorV2(),
-    ])
+    train_transform = A.Compose(
+        [
+            A.Resize(img_size, img_size),
+            A.HorizontalFlip(p=0.5),
+            A.VerticalFlip(p=0.5),
+            A.Rotate(limit=30, p=0.5),
+            A.GaussianBlur(blur_limit=3, p=0.3),
+            A.Normalize(
+                mean=(0.485, 0.485, 0.485),
+                std=(0.229, 0.229, 0.229),
+            ),
+            ToTensorV2(),
+        ]
+    )
 
-    val_transform = A.Compose([
-        A.Resize(img_size, img_size),
-        A.Normalize(mean=(0.485, 0.485, 0.485),  # Using ImageNet means
-                    std=(0.229, 0.229, 0.229)),   # Using ImageNet stds
-        ToTensorV2(),
-    ])
+    val_transform = A.Compose(
+        [
+            A.Resize(img_size, img_size),
+            A.Normalize(
+                mean=(0.485, 0.485, 0.485),
+                std=(0.229, 0.229, 0.229),
+            ),
+            ToTensorV2(),
+        ]
+    )
 
     # Paths to images and CSV files
     image_dir = "data/training"
     csv_file_path = "data/training.csv"
 
-    image_dir_val = "data/validation16bit"
-    csv_file_path_val = "data/validation.csv"
+    image_dir_original_val = "data/validation16bit"
+    csv_file_path_original_val = "data/validation.csv"
 
     # Create the datasets
-    train_dataset = LoadTifDataset(image_dir=image_dir, csv_file_path=csv_file_path, transform=train_transform)
-    val_dataset = LoadTifDataset(image_dir=image_dir_val, csv_file_path=csv_file_path_val, transform=val_transform)
-
-    # Extract labels from the dataset
-    train_labels = train_dataset.labels_df.iloc[:, 1].values  # assuming labels are in the second column
-
-    # Compute class counts and total samples
-    class_counts = train_dataset.labels_df['is_homogenous'].value_counts().to_dict()
-    total_samples = len(train_labels)
-    
-    # Initialize weights list
-    weights = [1.0] * total_samples
-
-    # Assign weights to each sample
-    for idx, label in enumerate(train_labels):
-        if label == 0:
-            weights[idx] = total_samples / (2 * class_counts.get(0, 1))
-        else:
-            weights[idx] = total_samples / (2 * class_counts.get(1, 1))
-
-    # Create WeightedRandomSampler
-    sampler = WeightedRandomSampler(weights, num_samples=total_samples, replacement=True)
-
-    # Create DataLoaders
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=batch_size,
-        sampler=sampler,
-        num_workers=8,
-        pin_memory=True
+    full_train_dataset = LoadTifDataset(
+        image_dir=image_dir, csv_file_path=csv_file_path, transform=train_transform
+    )
+    original_val_dataset = LoadTifDataset(
+        image_dir=image_dir_original_val,
+        csv_file_path=csv_file_path_original_val,
+        transform=val_transform,
     )
 
-    val_loader = DataLoader(
-        val_dataset,
+    if fold_indices is not None:
+        train_indices, val_indices = fold_indices
+        train_subset = Subset(full_train_dataset, train_indices)
+        val_subset = Subset(full_train_dataset, val_indices)
+
+        train_loader = DataLoader(
+            train_subset,
+            batch_size=batch_size,
+            shuffle=True,
+            num_workers=num_workers,
+            pin_memory=pin_memory,
+        )
+
+        val_loader = DataLoader(
+            val_subset,
+            batch_size=batch_size,
+            shuffle=False,
+            num_workers=num_workers,
+            pin_memory=pin_memory,
+        )
+    else:
+        # If no fold_indices provided, use the entire training set
+        train_loader = DataLoader(
+            full_train_dataset,
+            batch_size=batch_size,
+            shuffle=True,
+            num_workers=num_workers,
+            pin_memory=pin_memory,
+        )
+        val_loader = None
+
+    # Original validation loader
+    original_val_loader = DataLoader(
+        original_val_dataset,
         batch_size=batch_size,
         shuffle=False,
-        num_workers=8,
-        pin_memory=True
+        num_workers=num_workers,
+        pin_memory=pin_memory,
     )
 
-    return train_loader, val_loader
+    return train_loader, val_loader, original_val_loader
 
-def save_sample_images(dataset, num_samples=5, folder='plots', split='train'):
+def save_sample_images(dataset, num_samples=5, folder="plots", split="train"):
     """
     Saves a few sample images from the dataset to verify correctness.
 
@@ -174,18 +201,21 @@ def save_sample_images(dataset, num_samples=5, folder='plots', split='train'):
     for i in range(num_samples):
         image, label = dataset[i]
         image_np = image.permute(1, 2, 0).cpu().numpy()
-        image_np = (image_np * np.array([0.229, 0.224, 0.225])) + np.array([0.485, 0.456, 0.406])  # Unnormalize
+        image_np = (
+            image_np * np.array([0.229, 0.229, 0.229])
+        ) + np.array([0.485, 0.485, 0.485])  # Unnormalize
         image_np = np.clip(image_np, 0, 1)
         plt.imshow(image_np)
-        plt.title(f'{split.capitalize()} Label: {label}')
-        plt.axis('off')
-        plt.savefig(f'{folder}/{split}_sample_{i}.png')
+        plt.title(f"{split.capitalize()} Label: {label}")
+        plt.axis("off")
+        plt.savefig(f"{folder}/{split}_sample_{i}.png")
         plt.close()
 
 # Uncomment the following lines if you want to save sample images
-# train_loader_temp, val_loader_temp = get_dataloaders(batch_size=1, img_size=224)
+# train_loader_temp, val_loader_temp, original_val_loader_temp = get_dataloaders(batch_size=1, img_size=224)
 # save_sample_images(train_loader_temp.dataset, split='train')
 # save_sample_images(val_loader_temp.dataset, split='val')
+# save_sample_images(original_val_loader_temp.dataset, split='original_val')
 
 # logging.info("Sample images saved to 'plots' folder.")
 
@@ -193,129 +223,75 @@ def save_sample_images(dataset, num_samples=5, folder='plots', split='train'):
 # 9. Define Models Dictionary
 # ===============================
 
-def get_models(num_classes=1):
+def get_models(model_name, num_classes=1):
     """
-    Returns a dictionary of state-of-the-art models.
+    Returns a specific model based on the model_name.
 
     Args:
+        model_name (str): Name of the model to retrieve.
         num_classes (int, optional): Number of output classes. Defaults to 1.
 
     Returns:
-        dict: Dictionary of models.
+        nn.Module: The specified model.
     """
-    models_dict = {}
+    if model_name == "ViT16":
+        vit_weights = ViT_B_16_Weights.DEFAULT
+        model = models.vit_b_16(weights=vit_weights)
+        in_features = model.heads.head.in_features
+        model.heads.head = nn.Linear(in_features, num_classes)
 
-    # Vision Transformer16
-    vit_weights = ViT_B_16_Weights.DEFAULT
-    vit_model = models.vit_b_16(weights=vit_weights)
-    in_features = vit_model.heads.head.in_features
-    vit_model.heads.head = nn.Linear(in_features, num_classes)
-    models_dict['ViT16'] = vit_model
-    
-    # # Vision Transformer16
-    # vit_weights_h14 = ViT_H_14_Weights.DEFAULT
-    # vit_model14 = models.vit_h_14(weights=vit_weights_h14)
-    # in_features = vit_model14.heads.head.in_features
-    # vit_model14.heads.head = nn.Linear(in_features, num_classes)
-    # models_dict['ViTh14'] = vit_model14
-    
-    # Vision Transformer32
-    vit_weights32 = ViT_B_32_Weights.DEFAULT
-    vit_model32 = models.vit_b_32(weights=vit_weights32)
-    in_features = vit_model32.heads.head.in_features
-    vit_model32.heads.head = nn.Linear(in_features, num_classes)
-    models_dict['ViT32'] = vit_model32
+    elif model_name == "ViT32":
+        vit_weights32 = ViT_B_32_Weights.DEFAULT
+        model = models.vit_b_32(weights=vit_weights32)
+        in_features = model.heads.head.in_features
+        model.heads.head = nn.Linear(in_features, num_classes)
 
-    # ResNet18
-    resnet18_weights = ResNet18_Weights.DEFAULT
-    resnet18_model = models.resnet18(weights=resnet18_weights)
-    in_features = resnet18_model.fc.in_features
-    resnet18_model.fc = nn.Linear(in_features, num_classes)
-    models_dict['ResNet18'] = resnet18_model
+    elif model_name == "ResNet18":
+        resnet18_weights = ResNet18_Weights.DEFAULT
+        model = models.resnet18(weights=resnet18_weights)
+        in_features = model.fc.in_features
+        model.fc = nn.Linear(in_features, num_classes)
 
-    # ResNet50
-    resnet50_weights = ResNet50_Weights.DEFAULT
-    resnet50_model = models.resnet50(weights=resnet50_weights)
-    in_features = resnet50_model.fc.in_features
-    resnet50_model.fc = nn.Linear(in_features, num_classes)
-    models_dict['ResNet50'] = resnet50_model
+    elif model_name == "ResNet50":
+        resnet50_weights = ResNet50_Weights.DEFAULT
+        model = models.resnet50(weights=resnet50_weights)
+        in_features = model.fc.in_features
+        model.fc = nn.Linear(in_features, num_classes)
 
-    # ResNet101
-    resnet101_weights = ResNet101_Weights.DEFAULT
-    resnet101_model = models.resnet101(weights=resnet101_weights)
-    in_features = resnet101_model.fc.in_features
-    resnet101_model.fc = nn.Linear(in_features, num_classes)
-    models_dict['ResNet101'] = resnet101_model
+    elif model_name == "ResNet101":
+        resnet101_weights = ResNet101_Weights.DEFAULT
+        model = models.resnet101(weights=resnet101_weights)
+        in_features = model.fc.in_features
+        model.fc = nn.Linear(in_features, num_classes)
 
-    # EfficientNetB0
-    efficientnet_b0_weights = EfficientNet_B0_Weights.DEFAULT
-    efficientnet_b0_model = models.efficientnet_b0(weights=efficientnet_b0_weights)
-    in_features = efficientnet_b0_model.classifier[1].in_features
-    efficientnet_b0_model.classifier[1] = nn.Linear(in_features, num_classes)
-    models_dict['EfficientNetB0'] = efficientnet_b0_model
+    elif model_name == "EfficientNetB0":
+        efficientnet_b0_weights = EfficientNet_B0_Weights.DEFAULT
+        model = models.efficientnet_b0(weights=efficientnet_b0_weights)
+        in_features = model.classifier[1].in_features
+        model.classifier[1] = nn.Linear(in_features, num_classes)
 
-    # EfficientNetB4
-    efficientnet_b4_weights = EfficientNet_B4_Weights.DEFAULT
-    efficientnet_b4_model = models.efficientnet_b4(weights=efficientnet_b4_weights)
-    in_features = efficientnet_b4_model.classifier[1].in_features
-    efficientnet_b4_model.classifier[1] = nn.Linear(in_features, num_classes)
-    models_dict['EfficientNetB4'] = efficientnet_b4_model
+    elif model_name == "EfficientNetB4":
+        efficientnet_b4_weights = EfficientNet_B4_Weights.DEFAULT
+        model = models.efficientnet_b4(weights=efficientnet_b4_weights)
+        in_features = model.classifier[1].in_features
+        model.classifier[1] = nn.Linear(in_features, num_classes)
 
-    # MobileNetV3 Large
-    mobilenet_v3_weights = MobileNet_V3_Large_Weights.DEFAULT
-    mobilenet_v3_model = models.mobilenet_v3_large(weights=mobilenet_v3_weights)
-    in_features = mobilenet_v3_model.classifier[3].in_features
-    mobilenet_v3_model.classifier[3] = nn.Linear(in_features, num_classes)
-    models_dict['MobileNetV3'] = mobilenet_v3_model
+    elif model_name == "MobileNetV3":
+        mobilenet_v3_weights = MobileNet_V3_Large_Weights.DEFAULT
+        model = models.mobilenet_v3_large(weights=mobilenet_v3_weights)
+        in_features = model.classifier[3].in_features
+        model.classifier[3] = nn.Linear(in_features, num_classes)
 
-    # DenseNet121
-    densenet_weights = models.DenseNet121_Weights.DEFAULT
-    densenet_model = models.densenet121(weights=densenet_weights)
-    in_features = densenet_model.classifier.in_features
-    densenet_model.classifier = nn.Linear(in_features, num_classes)
-    models_dict['DenseNet121'] = densenet_model
+    elif model_name == "DenseNet121":
+        densenet_weights = models.DenseNet121_Weights.DEFAULT
+        model = models.densenet121(weights=densenet_weights)
+        in_features = model.classifier.in_features
+        model.classifier = nn.Linear(in_features, num_classes)
 
-    return models_dict
+    else:
+        raise ValueError(f"Model {model_name} is not supported.")
 
-
-# def get_models(num_classes=1):
-#     """
-#     Returns a dictionary of state-of-the-art models.
-
-#     Args:
-#         num_classes (int, optional): Number of output classes. Defaults to 1.
-
-#     Returns:
-#         dict: Dictionary of models.
-#     """
-#     models_dict = {}
-
-#     # Vision Transformer
-#     vit_weights = ViT_B_16_Weights.DEFAULT
-#     vit_model = models.vit_b_16(weights=vit_weights)
-#     in_features = vit_model.heads.head.in_features
-#     vit_model.heads.head = nn.Linear(in_features, num_classes)
-#     models_dict['ViT'] = vit_model
-
-#     # ResNet50
-#     resnet_model = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
-#     in_features = resnet_model.fc.in_features
-#     resnet_model.fc = nn.Linear(in_features, num_classes)
-#     models_dict['ResNet50'] = resnet_model
-
-#     # EfficientNet
-#     efficientnet_model = models.efficientnet_b0(weights=models.EfficientNet_B0_Weights.DEFAULT)
-#     in_features = efficientnet_model.classifier[1].in_features
-#     efficientnet_model.classifier[1] = nn.Linear(in_features, num_classes)
-#     models_dict['EfficientNet'] = efficientnet_model
-
-#     # MobileNetV3
-#     mobilenet_model = models.mobilenet_v3_large(weights=models.MobileNet_V3_Large_Weights.DEFAULT)
-#     in_features = mobilenet_model.classifier[3].in_features
-#     mobilenet_model.classifier[3] = nn.Linear(in_features, num_classes)
-#     models_dict['MobileNetV3'] = mobilenet_model
-
-#     return models_dict
+    return model
 
 # ===============================
 # 10. Define Focal Loss with Class Weights
@@ -351,9 +327,13 @@ class FocalLoss(nn.Module):
         """
         targets = targets.type_as(inputs)
         if self.logits:
-            BCE_loss = nn.functional.binary_cross_entropy_with_logits(inputs, targets, reduction='none')
+            BCE_loss = nn.functional.binary_cross_entropy_with_logits(
+                inputs, targets, reduction="none"
+            )
         else:
-            BCE_loss = nn.functional.binary_cross_entropy(inputs, targets, reduction='none')
+            BCE_loss = nn.functional.binary_cross_entropy(
+                inputs, targets, reduction="none"
+            )
         pt = torch.exp(-BCE_loss)
         F_loss = self.alpha * (1 - pt) ** self.gamma * BCE_loss
 
@@ -383,155 +363,266 @@ def get_model_parallel(model):
         logging.info("Using a single GPU.")
     return model
 
-global best_custom_score
-best_custom_score = 0
+# Initialize a global list to keep top 3 models
+top_k = 3
+top_models = []
+
+def update_top_models(model_state_dict, custom_score, trial_number, fold_number):
+    """
+    Updates the global top_models list with the new model if it is among the top_k.
+
+    Args:
+        model_state_dict (dict): The state dictionary of the model.
+        custom_score (float): The custom score of the model.
+        trial_number (int): The trial number from Optuna.
+        fold_number (int): The fold number in cross-validation.
+    """
+    global top_models
+    if len(top_models) < top_k:
+        top_models.append(
+            {
+                "score": custom_score,
+                "state_dict": model_state_dict,
+                "trial": trial_number,
+                "fold": fold_number,
+            }
+        )
+        top_models = sorted(top_models, key=lambda x: x["score"], reverse=True)
+    else:
+        if custom_score > top_models[-1]["score"]:
+            top_models[-1] = {
+                "score": custom_score,
+                "state_dict": model_state_dict,
+                "trial": trial_number,
+                "fold": fold_number,
+            }
+            top_models = sorted(top_models, key=lambda x: x["score"], reverse=True)
 
 def objective(trial):
     """
-    Objective function for Optuna hyperparameter optimization.
+    Objective function for Optuna hyperparameter optimization with 5-fold cross-validation.
 
     Args:
         trial (optuna.trial.Trial): Optuna trial object.
 
     Returns:
-        float: Validation custom score to maximize.
+        float: Average validation custom score across all folds.
     """
-    global best_custom_score
     # Hyperparameters to tune
-    model_name = trial.suggest_categorical('model_name', ['ViT', 'ResNet50', 'EfficientNet', 'MobileNetV3'])
-
-    if model_name == 'ViT':
+    model_name = trial.suggest_categorical(
+        "model_name",
+        [
+            "ViT16",
+            "ViT32",
+            "ResNet18",
+            "ResNet50",
+            "ResNet101",
+            "EfficientNetB0",
+            "EfficientNetB4",
+            "MobileNetV3",
+            "DenseNet121",
+        ],
+    )
+    if (model_name == 'ViT16' or model_name == 'ViT32'):
         img_size = 224  # Fixed for ViT
     else:
-        img_size = trial.suggest_categorical('img_size', [128, 224, 256, 299, 331, 350, 400, 500])
+        img_size = trial.suggest_categorical("img_size", [128, 224, 256, 299, 331, 350, 400, 500])
+    batch_size = trial.suggest_categorical("batch_size", [4, 8, 16, 32, 64, 128])
+    lr = trial.suggest_float("lr", 1e-6, 1e-2, log=True)
+    weight_decay = trial.suggest_float("weight_decay", 1e-6, 1e-2, log=True)
+    gamma = trial.suggest_float("gamma", 1.0, 3.0)
+    alpha = trial.suggest_float("alpha", 0.1, 0.9)
 
-    batch_size = trial.suggest_categorical('batch_size', [4, 8, 16, 32, 64, 128])
-    lr = trial.suggest_float('lr', 1e-6, 1e-2, log=True)
-    weight_decay = trial.suggest_float('weight_decay', 1e-6, 1e-2, log=True)
-    gamma = trial.suggest_float('gamma', 1.0, 3.0)
-    alpha = trial.suggest_float('alpha', 0.1, 0.9)
+    num_epochs = 2  # For quick experimentation; increase for better results
+    n_splits = 3  # 5-fold cross-validation
 
-    num_epochs = 50  # For quick experimentation; increase for better results
+    # Initialize StratifiedKFold
+    skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
 
-    # Get model
-    models_dict = get_models()
-    model = models_dict[model_name]
-    model = get_model_parallel(model)
-    model = model.to(device)
+    # Load full training dataset
+    full_train_dataset = LoadTifDataset(
+        image_dir="data/training8bit",
+        csv_file_path="data/training.csv",
+        transform=A.Compose(
+            [
+                A.Resize(img_size, img_size),
+                A.HorizontalFlip(p=0.5),
+                A.VerticalFlip(p=0.5),
+                A.Rotate(limit=30, p=0.5),
+                A.GaussianBlur(blur_limit=3, p=0.3),
+                A.Normalize(
+                    mean=(0.485, 0.485, 0.485),
+                    std=(0.229, 0.229, 0.229),
+                ),
+                ToTensorV2(),
+            ]
+        ),
+    )
 
-    # Get dataloaders
-    train_loader, val_loader = get_dataloaders(batch_size, img_size)
+    # Get labels for StratifiedKFold
+    labels = full_train_dataset.labels_df["is_homogenous"].values
 
-    # Loss function
-    criterion = FocalLoss(alpha=alpha, gamma=gamma, logits=True).to(device)
+    # Initialize list to store scores for each fold
+    fold_scores = []
 
-    # Optimizer and Scheduler
-    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
+    for fold, (train_idx, val_idx) in enumerate(skf.split(np.zeros(len(labels)), labels)):
+        logging.info(f"Starting Fold {fold + 1}/{n_splits}")
 
-    # Mixed Precision Scaler
-    scaler = torch.amp.GradScaler("cuda")  # Updated to use torch.cuda.amp
+        # Create DataLoaders for this fold
+        train_loader, val_loader, original_val_loader = get_dataloaders(
+            batch_size=batch_size,
+            img_size=img_size,
+            fold_indices=(train_idx, val_idx),
+        )
 
+        # Initialize model
+        model = get_models(model_name=model_name)
+        model = get_model_parallel(model)
+        model = model.to(device)
 
-    for epoch in range(num_epochs):
-        logging.info(f"Epoch {epoch+1}/{num_epochs}")
+        # Define loss, optimizer, scheduler
+        criterion = FocalLoss(alpha=alpha, gamma=gamma, logits=True).to(device)
+        optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
 
-        model.train()
-        train_loss = 0
-        train_preds = []
-        train_targets = []
+        # Mixed Precision Scaler
+        scaler = torch.amp.GradScaler()
 
-        progress_bar = tqdm(train_loader, desc=f'Training Epoch {epoch+1}', leave=False)
-        for images, labels in progress_bar:
-            images = images.to(device, non_blocking=True)
-            labels = labels.float().unsqueeze(1).to(device, non_blocking=True)
+        best_fold_score = 0
 
-            optimizer.zero_grad()
+        for epoch in range(num_epochs):
+            logging.info(f"Fold {fold + 1}, Epoch {epoch + 1}/{num_epochs}")
 
-            with torch.amp.autocast("cuda"):  # Updated autocast usage
-                outputs = model(images)
-                loss = criterion(outputs, labels)
+            # Training Phase
+            model.train()
+            train_loss = 0
+            train_preds = []
+            train_targets = []
 
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
-
-            train_loss += loss.item() * images.size(0)
-
-            preds = torch.sigmoid(outputs).detach().cpu().numpy()
-            train_preds.extend(preds)
-            train_targets.extend(labels.detach().cpu().numpy())
-
-            progress_bar.set_postfix({'Loss': loss.item()})
-
-        avg_train_loss = train_loss / len(train_loader.dataset)
-
-        # Validation
-        model.eval()
-        val_loss = 0
-        val_preds = []
-        val_targets = []
-
-        with torch.no_grad():
-            progress_bar = tqdm(val_loader, desc='Validation', leave=False)
-            for images, labels in progress_bar:
+            progress_bar = tqdm(train_loader, desc=f"Fold {fold +1} Training Epoch {epoch+1}", leave=False)
+            for images, labels_batch in progress_bar:
                 images = images.to(device, non_blocking=True)
-                labels = labels.float().unsqueeze(1).to(device, non_blocking=True)
+                labels_batch = labels_batch.float().unsqueeze(1).to(device, non_blocking=True)
 
-                with torch.amp.autocast("cuda"):  # Updated autocast usage
+                optimizer.zero_grad()
+
+                with torch.amp.autocast("cuda"):
                     outputs = model(images)
-                    loss = criterion(outputs, labels)
+                    loss = criterion(outputs, labels_batch)
 
-                val_loss += loss.item() * images.size(0)
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+
+                train_loss += loss.item() * images.size(0)
 
                 preds = torch.sigmoid(outputs).detach().cpu().numpy()
-                val_preds.extend(preds)
-                val_targets.extend(labels.detach().cpu().numpy())
+                train_preds.extend(preds)
+                train_targets.extend(labels_batch.detach().cpu().numpy())
 
-        avg_val_loss = val_loss / len(val_loader.dataset)
+                progress_bar.set_postfix({"Loss": loss.item()})
 
-        # Calculate custom score
-        preds_binary = (np.array(val_preds) > 0.5).astype(int)
-        custom_score = calculate_custom_score(val_targets, preds_binary)
+            avg_train_loss = train_loss / len(train_loader.dataset)
 
-        scheduler.step()
+            # Validation Phase (New Validation Set)
+            model.eval()
+            val_loss = 0
+            val_preds = []
+            val_targets = []
 
-        # Update best score and save model + JSON
-        if custom_score > best_custom_score:
-            best_custom_score = custom_score
+            with torch.no_grad():
+                progress_bar = tqdm(val_loader, desc=f"Fold {fold +1} Validation", leave=False)
+                for images, labels_batch in progress_bar:
+                    images = images.to(device, non_blocking=True)
+                    labels_batch = labels_batch.float().unsqueeze(1).to(device, non_blocking=True)
 
-            # Save the best model from Optuna hypertuning
-            save_path_optuna = 'checkpoints/best_model_optuna.pth'
-            if isinstance(model, nn.DataParallel):
-                torch.save(model.module.state_dict(), save_path_optuna)
-            else:
-                torch.save(model.state_dict(), save_path_optuna)
-            logging.info(f"New best Optuna model saved with Val Score: {best_custom_score:.4f}")
+                    with torch.amp.autocast("cuda"):
+                        outputs = model(images)
+                        loss = criterion(outputs, labels_batch)
 
-            # Save model architecture and hyperparameters for Optuna best model
-            model_info_optuna = {
-                'model_name': model_name,
-                'img_size': img_size,
-                'batch_size': batch_size,
-                'learning_rate': lr,
-                'weight_decay': weight_decay,
-                'gamma': gamma,
-                'alpha': alpha
-            }
-            with open('checkpoints/model_info_optuna.json', 'w') as f:
-                json.dump(model_info_optuna, f, indent=4)
-            # logging.info("Optuna best model architecture and hyperparameters saved to 'checkpoints/model_info_optuna.json'.")
+                    val_loss += loss.item() * images.size(0)
 
-        # Report intermediate objective value
-        trial.report(custom_score, epoch)
+                    preds = torch.sigmoid(outputs).detach().cpu().numpy()
+                    val_preds.extend(preds)
+                    val_targets.extend(labels_batch.detach().cpu().numpy())
 
-        # Handle pruning based on the intermediate value
-        if trial.should_prune():
-            raise optuna.exceptions.TrialPruned()
+            avg_val_loss = val_loss / len(val_loader.dataset)
 
-    return best_custom_score
+            # Original Validation Set Evaluation
+            original_val_loss = 0
+            original_val_preds = []
+            original_val_targets = []
 
+            with torch.no_grad():
+                progress_bar = tqdm(original_val_loader, desc=f"Fold {fold +1} Original Validation", leave=False)
+                for images, labels_batch in progress_bar:
+                    images = images.to(device, non_blocking=True)
+                    labels_batch = labels_batch.float().unsqueeze(1).to(device, non_blocking=True)
 
+                    with torch.amp.autocast("cuda"):
+                        outputs = model(images)
+                        loss = criterion(outputs, labels_batch)
+
+                    original_val_loss += loss.item() * images.size(0)
+
+                    preds = torch.sigmoid(outputs).detach().cpu().numpy()
+                    original_val_preds.extend(preds)
+                    original_val_targets.extend(labels_batch.detach().cpu().numpy())
+
+            avg_original_val_loss = original_val_loss / len(original_val_loader.dataset)
+
+            # Calculate custom scores
+            preds_binary = (np.array(val_preds) > 0.5).astype(int)
+            custom_score = calculate_custom_score(val_targets, preds_binary)
+
+            preds_binary_original = (np.array(original_val_preds) > 0.5).astype(int)
+            custom_score_original = calculate_custom_score(original_val_targets, preds_binary_original)
+
+            # Log the scores
+            logging.info(
+                f"Fold {fold +1} Epoch {epoch +1}: "
+                f"Train Loss: {avg_train_loss:.4f} | "
+                f"Val Loss: {avg_val_loss:.4f} | "
+                f"Original Val Loss: {avg_original_val_loss:.4f} | "
+                f"Custom Score (New Val): {custom_score:.4f} | "
+                f"Custom Score (Original Val): {custom_score_original:.4f}"
+            )
+
+            # Update scheduler
+            scheduler.step()
+
+            # Update best score and save model if necessary
+            if custom_score > best_fold_score:
+                best_fold_score = custom_score
+
+                # Save the best model for this fold and trial
+                save_path = f"checkpoints/best_model_trial_{trial.number}_fold_{fold +1}.pth"
+                if isinstance(model, nn.DataParallel):
+                    torch.save(model.module.state_dict(), save_path)
+                else:
+                    torch.save(model.state_dict(), save_path)
+                logging.info(
+                    f"Fold {fold +1} Epoch {epoch +1}: New best model saved with Custom Score: {custom_score:.4f}"
+                )
+
+                # Update global top models
+                update_top_models(
+                    model_state_dict=model.module.state_dict()
+                    if isinstance(model, nn.DataParallel)
+                    else model.state_dict(),
+                    custom_score=custom_score,
+                    trial_number=trial.number,
+                    fold_number=fold +1,
+                )
+
+        fold_scores.append(best_fold_score)
+        logging.info(f"Fold {fold +1} Best Custom Score: {best_fold_score:.4f}")
+
+    # Calculate average score across folds
+    avg_score = np.mean(fold_scores)
+    logging.info(f"Trial {trial.number}: Average Custom Score across folds: {avg_score:.4f}")
+
+    return avg_score
 
 # ===============================
 # 12. Run Optuna Study
@@ -540,241 +631,54 @@ def objective(trial):
 # To utilize multiple GPUs, Optuna's study should run in a single process.
 # Ensure that the DataParallel setup is correctly applied within the objective function.
 
-study = optuna.create_study(direction='maximize')
-study.optimize(objective, n_trials=50, timeout=None)  # Increased n_trials for better hyperparameter exploration
+study = optuna.create_study(direction="maximize")
+study.optimize(objective, n_trials=9, timeout=None)  # Increased n_trials for better hyperparameter exploration
 
 logging.info("===== Best Trial =====")
 best_trial = study.best_trial
 
-logging.info(f"  Value (Custom Score): {best_trial.value}")
+logging.info(f"  Value (Average Custom Score): {best_trial.value}")
 logging.info("  Params: ")
 for key, value in best_trial.params.items():
     logging.info(f"    {key}: {value}")
 
 # ===============================
-# 13. Train Best Model with Best Hyperparameters
+# 13. Save Top 3 Models
 # ===============================
 
-def train_best_model(trial):
+def save_top_models(top_models):
     """
-    Trains the best model with the best hyperparameters found by Optuna.
+    Saves the top models to the checkpoints directory.
 
     Args:
-        trial (optuna.trial.FrozenTrial): Best trial object from Optuna study.
+        top_models (list): List of top model dictionaries.
     """
-    model_name = trial.params['model_name']
+    os.makedirs("checkpoints/top_models", exist_ok=True)
+    for idx, model_info in enumerate(top_models):
+        save_path = f"checkpoints/top_models/best_model_{idx +1}_score_{model_info['score']:.4f}_trial_{model_info['trial']}_fold_{model_info['fold']}.pth"
+        torch.save(model_info["state_dict"], save_path)
+        logging.info(f"Saved Top {idx +1} Model: {save_path}")
 
-    if model_name == 'ViT':
-        img_size = 224  # Fixed for ViT
-    else:
-        img_size = trial.params.get('img_size', 224)  # Default to 224 if not present
+    # Optionally, save the top_models information to a JSON file
+    top_models_info = [
+        {
+            "score": model["score"],
+            "trial": model["trial"],
+            "fold": model["fold"],
+            "path": f"checkpoints/top_models/best_model_{idx +1}_score_{model['score']:.4f}_trial_{model['trial']}_fold_{model['fold']}.pth",
+        }
+        for idx, model in enumerate(top_models)
+    ]
+    with open("checkpoints/top_models/top_models_info.json", "w") as f:
+        json.dump(top_models_info, f, indent=4)
+    logging.info("Top models information saved to 'checkpoints/top_models/top_models_info.json'.")
 
-    batch_size = trial.params['batch_size']
-    lr = trial.params['lr']
-    weight_decay = trial.params['weight_decay']
-    gamma = trial.params['gamma']
-    alpha = trial.params['alpha']
-
-    num_epochs = 100  # Increased epochs for final training
-
-    # Get model
-    models_dict = get_models()
-    model = models_dict[model_name]
-    model = get_model_parallel(model)
-    model = model.to(device)
-
-    # Get dataloaders
-    train_loader, val_loader = get_dataloaders(batch_size, img_size)
-
-    # Loss function
-    criterion = FocalLoss(alpha=alpha, gamma=gamma, logits=True).to(device)
-
-    # Optimizer and Scheduler
-    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
-
-    # Mixed Precision Scaler
-    scaler = torch.amp.GradScaler("cuda")  # Updated to use torch.cuda.amp
-
-    best_custom_score = 0
-    early_stopping_patience = 10
-    patience_counter = 0
-
-    # Initialize model_info dictionary
-    model_info = {
-        'model_name': model_name,
-        'img_size': img_size,
-        'batch_size': batch_size,
-        'learning_rate': lr,
-        'weight_decay': weight_decay,
-        'gamma': gamma,
-        'alpha': alpha
-    }
-
-    for epoch in range(num_epochs):
-        logging.info(f"Epoch {epoch+1}/{num_epochs}")
-        model.train()
-        train_loss = 0
-        train_preds = []
-        train_targets = []
-
-        progress_bar = tqdm(train_loader, desc='Training', leave=False)
-        for images, labels in progress_bar:
-            images = images.to(device, non_blocking=True)
-            labels = labels.float().unsqueeze(1).to(device, non_blocking=True)
-
-            optimizer.zero_grad()
-
-            with torch.amp.autocast("cuda"):  # Updated autocast usage
-                outputs = model(images)
-                loss = criterion(outputs, labels)
-
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
-
-            train_loss += loss.item() * images.size(0)
-
-            preds = torch.sigmoid(outputs).detach().cpu().numpy()
-            train_preds.extend(preds)
-            train_targets.extend(labels.detach().cpu().numpy())
-
-            progress_bar.set_postfix({'Loss': loss.item()})
-
-        avg_train_loss = train_loss / len(train_loader.dataset)
-
-        # Validation
-        model.eval()
-        val_loss = 0
-        val_preds = []
-        val_targets = []
-
-        with torch.no_grad():
-            progress_bar = tqdm(val_loader, desc='Validation', leave=False)
-            for images, labels in progress_bar:
-                images = images.to(device, non_blocking=True)
-                labels = labels.float().unsqueeze(1).to(device, non_blocking=True)
-
-                with torch.amp.autocast("cuda"):  # Updated autocast usage
-                    outputs = model(images)
-                    loss = criterion(outputs, labels)
-
-                val_loss += loss.item() * images.size(0)
-
-                preds = torch.sigmoid(outputs).detach().cpu().numpy()
-                val_preds.extend(preds)
-                val_targets.extend(labels.detach().cpu().numpy())
-
-        avg_val_loss = val_loss / len(val_loader.dataset)
-
-        # Calculate accuracy
-        preds_binary = (np.array(val_preds) > 0.5).astype(int)
-        val_acc = accuracy_score(val_targets, preds_binary) * 100  # Convert to percentage
-
-        # Calculate custom score
-        custom_score = calculate_custom_score(val_targets, preds_binary)
-
-        logging.info(f"Train Loss: {avg_train_loss:.4f}")
-        logging.info(f"Val Loss: {avg_val_loss:.4f} | Val Acc: {val_acc:.2f}% | Val Score: {custom_score:.4f}")
-
-        # Scheduler step
-        scheduler.step()
-
-        # Checkpointing based on custom score
-        if custom_score > best_custom_score:
-            best_custom_score = custom_score
-            # Save the best model from final training with a different name
-            save_path_final = 'checkpoints/best_model_final.pth'  # Changed filename
-            if isinstance(model, nn.DataParallel):
-                torch.save(model.module.state_dict(), save_path_final)
-            else:
-                torch.save(model.state_dict(), save_path_final)
-            logging.info(f"Best final model saved with Val Score: {best_custom_score:.4f}")
-            patience_counter = 0
-
-            # Save model architecture name
-            model_info_current = {
-                'model_name': model_name,
-                'img_size': img_size
-            }
-            with open('checkpoints/model_info_final.json', 'w') as f:
-                json.dump(model_info_current, f)
-            logging.info("Final model architecture information saved to 'checkpoints/model_info_final.json'.")
-
-        else:
-            patience_counter += 1
-            logging.info(f"No improvement in Val Score for {patience_counter} epochs.")
-
-        # Early Stopping
-        if patience_counter >= early_stopping_patience:
-            logging.info("Early stopping triggered.")
-            break
-
-    # Load best model
-    if isinstance(model, nn.DataParallel):
-        model.module.load_state_dict(torch.load('checkpoints/best_model_final.pth'))
-    else:
-        model.load_state_dict(torch.load('checkpoints/best_model_final.pth'))
-    model.eval()
-
-    # Final Evaluation
-    val_loss = 0
-    val_preds = []
-    val_targets = []
-
-    with torch.no_grad():
-        progress_bar = tqdm(val_loader, desc='Final Evaluation', leave=False)
-        for images, labels in progress_bar:
-            images = images.to(device, non_blocking=True)
-            labels = labels.float().unsqueeze(1).to(device, non_blocking=True)
-
-            with torch.amp.autocast("cuda"):  # Updated autocast usage
-                outputs = model(images)
-                loss = criterion(outputs, labels)
-
-            val_loss += loss.item() * images.size(0)
-
-            preds = torch.sigmoid(outputs).detach().cpu().numpy()
-            val_preds.extend(preds)
-            val_targets.extend(labels.detach().cpu().numpy())
-
-    avg_val_loss = val_loss / len(val_loader.dataset)
-    preds_binary = (np.array(val_preds) > 0.5).astype(int)
-    val_acc = accuracy_score(val_targets, preds_binary) * 100
-    custom_score = calculate_custom_score(val_targets, preds_binary)
-
-    logging.info("===== Final Evaluation =====")
-    logging.info(f"Val Loss: {avg_val_loss:.4f} | Val Acc: {val_acc:.2f}% | Val Score: {custom_score:.4f}")
-
-    # Save the final model
-    save_path_final = 'checkpoints/final_model_final.pth'  # Changed filename to differentiate from Optuna best
-    if isinstance(model, nn.DataParallel):
-        torch.save(model.module.state_dict(), save_path_final)
-    else:
-        torch.save(model.state_dict(), save_path_final)
-    logging.info(f"Final model saved as '{save_path_final}'.")
-
-    # Optionally, save the model architecture info for the final model
-    with open('checkpoints/final_model_info_final.json', 'w') as f:
-        json.dump(model_info, f)
-    logging.info("Final model architecture information saved to 'checkpoints/final_model_info_final.json'.")
-
-    # ===============================
-    # 15. Print Final Summary
-    # ===============================
-
-    logging.info("===== Best Model Configuration =====")
-    for key, value in model_info.items():
-        logging.info(f"{key}: {value}")
-
-    logging.info("===== Final Evaluation Metrics =====")
-    logging.info(f"Validation Loss: {avg_val_loss:.4f}")
-    logging.info(f"Validation Accuracy: {val_acc:.2f}%")
-    logging.info(f"Custom Score: {custom_score:.4f}")
+# Save the top 3 models after the study
+save_top_models(top_models)
 
 # ===============================
-# 14. Execute Training of Best Model
+# 14. Final Remarks
 # ===============================
 
-# Train the best model
-train_best_model(best_trial)
+logging.info("Training and Hyperparameter Tuning Completed.")
+logging.info("Top 3 models have been saved in 'checkpoints/top_models/' directory.")
