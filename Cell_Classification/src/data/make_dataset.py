@@ -11,6 +11,21 @@ from torch.utils.data import Dataset, DataLoader
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+from PIL import Image
+import io
+import joblib
+import json
+
+
+def get_image(image) -> np.ndarray:
+    # image = Image.open(image)
+    image_data = base64.b64decode(image)
+    image = Image.open(io.BytesIO(image_data))
+    image_array = np.array(image, dtype=np.uint16)
+    return image_array
+
+
 
 def setup_working_directory():
     """
