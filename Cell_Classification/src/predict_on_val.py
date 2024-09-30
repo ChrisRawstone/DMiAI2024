@@ -1,4 +1,4 @@
-# evaluation.py
+# predict_on_val.py
 
 import os
 import json
@@ -7,12 +7,12 @@ import torch
 import pandas as pd
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 
-from predict import (
+from utils import (
     get_transforms,
-    get_model,
     load_model,
     preprocess_image,
-    predict
+    predict,
+    calculate_custom_score
 )
 
 def main():
@@ -23,26 +23,26 @@ def main():
         '--image_dir',
         type=str,
         default='data/validation',  # Default path to the validation images folder
-        help='Path to the directory containing evaluation images. Default is "validation".'
+        help='Path to the directory containing evaluation images. Default is "data/validation".'
     )
     parser.add_argument(
         '--labels_csv',
         type=str,
         default='data/validation.csv',  # Default path to the validation labels CSV
-        help='Path to the CSV file containing image labels. Default is "validation.csv".'
+        help='Path to the CSV file containing image labels. Default is "data/validation.csv".'
     )
-    parser.add_argument(
-        '--model_checkpoint',
-        type=str,
-        default='checkpoints/final_model.pth',
-        help='Path to the model checkpoint. Default is "checkpoints/final_model.pth".'
-    )
-    parser.add_argument(
-        '--model_info',
-        type=str,
-        default='checkpoints/final_model_info.json',
-        help='Path to the model info JSON. Default is "checkpoints/final_model_info.json".'
-    )
+    # parser.add_argument(
+    #     '--model_checkpoint',
+    #     type=str,
+    #     default='checkpoints/best_model_optuna.pth',
+    #     help='Path to the model checkpoint. Default is "checkpoints/best_model_optuna.pth".'
+    # )
+    # parser.add_argument(
+    #     '--model_info',
+    #     type=str,
+    #     default='checkpoints/model_info_optuna.json',
+    #     help='Path to the model info JSON. Default is "checkpoints/final_model_info.json".'
+    # )
     parser.add_argument(
         '--threshold',
         type=float,
@@ -52,12 +52,21 @@ def main():
     
     args = parser.parse_args()
 
+    # model_checkpoint = 'checkpoints/best_model_optuna.pth'
+    # model_info = 'checkpoints/model_info_optuna.json'
+
+    # model_checkpoint = 'checkpoints/best_model_final.pth'
+    # model_info = 'checkpoints/model_info_final.json'
+
+    model_checkpoint = 'checkpoints/final_model_final.pth'
+    model_info = 'checkpoints/final_model_info_final.json'
+
     # Display the configuration being used
     print("Evaluation Configuration:")
     print(f"Image Directory : {args.image_dir}")
     print(f"Labels CSV      : {args.labels_csv}")
-    print(f"Model Checkpoint: {args.model_checkpoint}")
-    print(f"Model Info      : {args.model_info}")
+    print(f"Model Checkpoint: {model_checkpoint}")
+    print(f"Model Info      : {model_info}")
     print(f"Threshold       : {args.threshold}\n")
     
     # Check device
@@ -65,12 +74,12 @@ def main():
     print(f"Using device: {device}\n")
 
     # Load model
-    if not os.path.exists(args.model_checkpoint):
-        raise FileNotFoundError(f"Model checkpoint not found: {args.model_checkpoint}")
-    if not os.path.exists(args.model_info):
-        raise FileNotFoundError(f"Model info file not found: {args.model_info}")
+    if not os.path.exists(model_checkpoint):
+        raise FileNotFoundError(f"Model checkpoint not found: {model_checkpoint}")
+    if not os.path.exists(model_info):
+        raise FileNotFoundError(f"Model info file not found: {model_info}")
 
-    model, img_size, model_info = load_model(args.model_checkpoint, args.model_info, device)
+    model, img_size, model_info = load_model(model_checkpoint, model_info, device)
     print(f"Loaded model architecture: {model_info['model_name']} with image size: {img_size}\n")
 
     # Get transforms
@@ -115,7 +124,7 @@ def main():
             prediction = predict(image_tensor, model, device, threshold=args.threshold)
             predictions.append(prediction)
             ground_truths.append(int(label))
-            print(f"[{idx}/{len(image_ids)}] Processed: {img_filename} | Prediction: {'Homogeneous' if prediction == 1 else 'Heterogeneous'} | Ground Truth: {'Homogeneous' if label == 1 else 'Heterogeneous'}")
+            # print(f"[{idx}/{len(image_ids)}] Processed: {img_filename} | Prediction: {'Homogeneous' if prediction == 1 else 'Heterogeneous'} | Ground Truth: {'Homogeneous' if label == 1 else 'Heterogeneous'}")
         except Exception as e:
             print(f"[{idx}/{len(image_ids)}] Error processing image {full_image_path}: {e}. Skipping.")
             continue

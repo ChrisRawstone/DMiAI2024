@@ -8,13 +8,52 @@ import cv2
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 from torchvision import models
-import os
-import numpy as np
-import cv2
-import base64 
 from PIL import Image
 from skimage.feature import hog
-import joblib
+import random
+
+# Set the desired image size (e.g., 128x128) for resizing
+IMAGE_SIZE = (224, 224)
+
+
+
+def set_seed(seed=42):
+    """Set random seeds for reproducibility."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
+def calculate_custom_score(y_true, y_pred):
+    """
+    Calculates the custom score based on the formula:
+    Score = (a0 * a1) / (n0 * n1)
+
+    Where:
+    - a0: True Negatives (correctly predicted as 0)
+    - a1: True Positives (correctly predicted as 1)
+    - n0: Total actual class 0 samples
+    - n1: Total actual class 1 samples
+    """
+    y_true = np.array(y_true)
+    y_pred = np.array(y_pred)
+
+    # True Negatives (a0)
+    a0 = np.sum((y_true == 0) & (y_pred == 0))
+
+    # True Positives (a1)
+    a1 = np.sum((y_true == 1) & (y_pred == 1))
+
+    # Total actual class 0 and class 1
+    n0 = np.sum(y_true == 0)
+    n1 = np.sum(y_true == 1)
+
+    # Avoid division by zero
+    if n0 == 0 or n1 == 0:
+        return 0.0
+
+    score = (a0 * a1) / (n0 * n1)
+    return score
 
 def get_transforms(img_size=224):
     """
@@ -83,8 +122,7 @@ def load_model(checkpoint_path, model_info_path, device):
         device (torch.device): Device to load the model on.
 
     Returns:
-        nn.Module: The loaded model.
-        int: Image size used by the model.
+        tuple: (model, img_size, model_info)
     """
     with open(model_info_path, 'r') as f:
         model_info = json.load(f)
@@ -93,10 +131,13 @@ def load_model(checkpoint_path, model_info_path, device):
     img_size = model_info['img_size']
 
     model = get_model(model_name, num_classes=1)
-    model.load_state_dict(torch.load(checkpoint_path, map_location=device))
+    state_dict = torch.load(checkpoint_path, map_location=device)
+    model.load_state_dict(state_dict)
     model.to(device)
     model.eval()
-    return model, img_size
+    return model, img_size, model_info
+
+
 
 def preprocess_image(image_path, transform, device):
     """
@@ -178,63 +219,7 @@ def predict_batch(image_tensors, model, device, threshold=0.5):
             predictions = [predictions]
     return predictions
 
-
-
-def decode_image(encoded_img: str) -> np.ndarray:
-    """
-    Decodes a base64 encoded image string to a NumPy array.
-
-    Args:
-        encoded_img (str): Base64 encoded image string.
-
-    Returns:
-        np.ndarray: Decoded image.
-    """
-    try:
-        # Decode the base64 string to bytes
-        img_data = base64.b64decode(encoded_img)
-        # Convert bytes data to NumPy array
-        np_arr = np.frombuffer(img_data, np.uint8)
-        # Decode the image data using OpenCV
-        image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-        if image is None:
-            raise ValueError("Image decoding resulted in None.")
-        return image
-    except Exception as e:
-        raise ValueError(f"Failed to decode image: {e}")
-
-def load_sample(encoded_img: str) -> dict:
-    """
-    Loads and decodes the sample image.
-
-    Args:
-        encoded_img (str): Base64 encoded image string.
-
-    Returns:
-        dict: Dictionary containing the image.
-    """
-    image = decode_image(encoded_img)  # Decode the image
-    return {
-        "image": image
-    }
-
-def load_model(model_path: str):
-    """
-    Load the trained model from the given path.
-
-    Args:
-        model_path (str): Path to the saved model.
-
-    Returns:
-        model: The loaded machine learning model.
-    """
-    if not os.path.exists(model_path):
-        raise FileNotFoundError(f"Model file '{model_path}' not found.")
-    model = joblib.load(model_path)
-    print(f"Model loaded from {model_path}")
-    return model
-
-def preprocess_image(image: np.ndarray) -> np.ndarray:
+def preprocess_image_hog(image: np.ndarray) -> np.ndarray:
     """
     Preprocess the input image for prediction.
     This includes converting to grayscale, resizing, and extracting HOG features.
@@ -262,7 +247,6 @@ def preprocess_image(image: np.ndarray) -> np.ndarray:
     )
 
     return hog_features.reshape(1, -1)  # Reshape to match the input format expected by the model
-
 
 def save_image_as_tif(image: np.ndarray, output_path: str) -> None:
     """
