@@ -6,11 +6,8 @@ import argparse
 import torch
 import pandas as pd
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
-from src.utils import set_seed
 
-
-
-from predict import (
+from utils import (
     get_transforms,
     get_model,
     load_model,
@@ -19,8 +16,6 @@ from predict import (
 )
 
 def main():
-    set_seed(42)
-
     parser = argparse.ArgumentParser(description="Evaluation Script")
     
     # Updated arguments with default values for validation
@@ -40,13 +35,13 @@ def main():
         '--model_checkpoint',
         type=str,
         default='checkpoints/final_model.pth',
-        help='Path to the model checkpoint. Default is "checkpoints/best_model.pth".'
+        help='Path to the model checkpoint. Default is "checkpoints/final_model.pth".'
     )
     parser.add_argument(
         '--model_info',
         type=str,
         default='checkpoints/final_model_info.json',
-        help='Path to the model info JSON. Default is "checkpoints/best_model_info.json".'
+        help='Path to the model info JSON. Default is "checkpoints/final_model_info.json".'
     )
     parser.add_argument(
         '--threshold',
@@ -75,7 +70,7 @@ def main():
     if not os.path.exists(args.model_info):
         raise FileNotFoundError(f"Model info file not found: {args.model_info}")
 
-    model, img_size, model_info = load_model(args.model_checkpoint, args.model_info, device)
+    model, img_size = load_model(args.model_checkpoint, args.model_info, device)
     print(f"Loaded model architecture: {model_info['model_name']} with image size: {img_size}\n")
 
     # Get transforms

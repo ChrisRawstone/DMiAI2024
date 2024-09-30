@@ -1,6 +1,5 @@
 # utils.py
 
-
 import os
 import json
 import torch
@@ -10,32 +9,37 @@ import cv2
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 from torchvision import models
+from PIL import Image
+from skimage.feature import hog
+import random
 
+# Set the desired image size (e.g., 128x128) for resizing
+IMAGE_SIZE = (224, 224)
 
+def set_seed(seed=42):
+    """Set random seeds for reproducibility."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
 
+def get_transforms(img_size=224):
+    """
+    Returns the transform pipeline used during training.
 
-def get_train_transforms(img_size=224):
-    return A.Compose([
+    Args:
+        img_size (int): Image size for resizing.
+
+    Returns:
+        albumentations.Compose: Composed transformations.
+    """
+    transform = A.Compose([
         A.Resize(img_size, img_size),
-        A.HorizontalFlip(p=0.5),
-        A.VerticalFlip(p=0.5),
-        A.Rotate(limit=30, p=0.5),
-        A.RandomBrightnessContrast(p=0.5),
-        A.RandomGamma(p=0.5),
-        A.GaussianBlur(blur_limit=3, p=0.3),
-        A.Normalize(mean=(0.485, 0.456, 0.406),
-                    std=(0.229, 0.224, 0.225)),
+        A.Normalize(mean=(0.485, 0.456, 0.406),  # Using ImageNet means
+                    std=(0.229, 0.224, 0.225)),   # Using ImageNet stds
         ToTensorV2(),
     ])
-
-def get_val_transforms(img_size=224):
-    return A.Compose([
-        A.Resize(img_size, img_size),
-        A.Normalize(mean=(0.485, 0.456, 0.406),
-                    std=(0.229, 0.224, 0.225)),
-        ToTensorV2(),
-    ])
-
+    return transform
 
 def get_model(model_name, num_classes=1):
     """
@@ -86,8 +90,7 @@ def load_model(checkpoint_path, model_info_path, device):
         device (torch.device): Device to load the model on.
 
     Returns:
-        nn.Module: The loaded model.
-        int: Image size used by the model.
+        tuple: (model, img_size, model_info)
     """
     with open(model_info_path, 'r') as f:
         model_info = json.load(f)
@@ -99,7 +102,7 @@ def load_model(checkpoint_path, model_info_path, device):
     model.load_state_dict(torch.load(checkpoint_path, map_location=device))
     model.to(device)
     model.eval()
-    return model, img_size
+    return model, img_size, model_info
 
 def preprocess_image(image_path, transform, device):
     """
@@ -181,30 +184,7 @@ def predict_batch(image_tensors, model, device, threshold=0.5):
             predictions = [predictions]
     return predictions
 
-
-
-
-import os
-import numpy as np
-import cv2
-import base64 
-from PIL import Image
-from skimage.feature import hog
-import joblib
-import random
-
-# Set the desired image size (e.g., 128x128) for resizing
-IMAGE_SIZE = (224, 224)
-
-
-def set_seed(seed=42):
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-
-
-def preprocess_image(image: np.ndarray) -> np.ndarray:
+def preprocess_image_hog(image: np.ndarray) -> np.ndarray:
     """
     Preprocess the input image for prediction.
     This includes converting to grayscale, resizing, and extracting HOG features.
@@ -232,9 +212,6 @@ def preprocess_image(image: np.ndarray) -> np.ndarray:
     )
 
     return hog_features.reshape(1, -1)  # Reshape to match the input format expected by the model
-
-
-
 
 def save_image_as_tif(image: np.ndarray, output_path: str) -> None:
     """

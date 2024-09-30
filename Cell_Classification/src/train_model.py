@@ -18,16 +18,12 @@ from torchvision.models import ViT_B_16_Weights
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 
-from src.utils import set_seed
-
 from sklearn.metrics import accuracy_score, roc_auc_score
 from tqdm import tqdm
 from PIL import Image
 
 import random
 import logging
-
-from src.utils import get_train_transforms, get_val_transforms
 
 # Optuna for hyperparameter tuning
 import optuna
@@ -37,7 +33,12 @@ import json
 # 1. Setup and Configuration
 # ===============================
 
-
+def set_seed(seed=42):
+    """Set random seeds for reproducibility."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
 
 set_seed(42)
 
@@ -112,45 +113,6 @@ from PIL import Image
 
 import random
 import logging
-
-# ===============================
-# 1. Setup and Configuration
-# ===============================
-
-# Set random seeds for reproducibility
-def set_seed(seed=42):
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-
-set_seed(42)
-
-# Define device
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-# Create directories
-os.makedirs('plots', exist_ok=True)
-os.makedirs('checkpoints', exist_ok=True)
-os.makedirs('logs', exist_ok=True)
-
-# Setup logging
-logging.basicConfig(
-    filename='logs/training.log',
-    level=logging.INFO,
-    format='%(asctime)s %(levelname)s %(message)s',
-)
-console = logging.StreamHandler()
-console.setLevel(logging.INFO)
-formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
-console.setFormatter(formatter)
-logging.getLogger('').addHandler(console)
-
-# ===============================
-# 2. Data Decoding Functions
-# ===============================
-
-
 
 # ===============================
 # 4. Custom Dataset
@@ -488,7 +450,7 @@ def objective(trial):
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
 
     # Mixed Precision Scaler
-    scaler = torch.amp.GradScaler('cuda')  # Removed 'device_type' argument
+    scaler = torch.amp.GradScaler()  # Updated to use torch.amp instead of torch.cuda.amp
 
     best_custom_score = 0
 
@@ -505,7 +467,7 @@ def objective(trial):
 
             optimizer.zero_grad()
 
-            with torch.amp.autocast("cuda"):  # Removed 'device_type' argument
+            with torch.amp.autocast("cuda"):  # Updated autocast usage
                 outputs = model(images)
                 loss = criterion(outputs, labels)
 
@@ -535,7 +497,7 @@ def objective(trial):
                 images = images.to(device, non_blocking=True)
                 labels = labels.float().unsqueeze(1).to(device, non_blocking=True)
 
-                with torch.amp.autocast('cuda'):  # Removed 'device_type' argument
+                with torch.amp.autocast("cuda"):  # Updated autocast usage
                     outputs = model(images)
                     loss = criterion(outputs, labels)
 
@@ -574,7 +536,7 @@ def objective(trial):
 # Ensure that the DataParallel setup is correctly applied within the objective function.
 
 study = optuna.create_study(direction='maximize')
-study.optimize(objective, n_trials=5, timeout=None)
+study.optimize(objective, n_trials=20, timeout=None)
 
 logging.info("Best trial:")
 best_trial = study.best_trial
@@ -627,7 +589,7 @@ def train_best_model(trial):
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
 
     # Mixed Precision Scaler
-    scaler = torch.amp.GradScaler('cuda')  # Removed 'device_type' argument
+    scaler = torch.amp.GradScaler()  # Updated to use torch.amp instead of torch.cuda.amp
 
     best_custom_score = 0
     early_stopping_patience = 10
@@ -647,7 +609,7 @@ def train_best_model(trial):
 
             optimizer.zero_grad()
 
-            with torch.amp.autocast('cuda'):  # Removed 'device_type' argument
+            with torch.amp.autocast("cuda"):  # Updated autocast usage
                 outputs = model(images)
                 loss = criterion(outputs, labels)
 
@@ -677,7 +639,7 @@ def train_best_model(trial):
                 images = images.to(device, non_blocking=True)
                 labels = labels.float().unsqueeze(1).to(device, non_blocking=True)
 
-                with torch.amp.autocast('cuda'):  # Removed 'device_type' argument
+                with torch.amp.autocast("cuda"):  # Updated autocast usage
                     outputs = model(images)
                     loss = criterion(outputs, labels)
 
@@ -749,7 +711,7 @@ def train_best_model(trial):
             images = images.to(device, non_blocking=True)
             labels = labels.float().unsqueeze(1).to(device, non_blocking=True)
 
-            with torch.amp.autocast('cuda'):  # Removed 'device_type' argument
+            with torch.amp.autocast("cuda"):  # Updated autocast usage
                 outputs = model(images)
                 loss = criterion(outputs, labels)
 
