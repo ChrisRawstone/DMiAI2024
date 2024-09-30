@@ -15,6 +15,9 @@ import pathlib
 
 from loguru import logger
 
+sumo_version = "sumo-gui"
+sleep_time = 0.1
+
 from dtos import (
     TrafficSimulationPredictRequestDto, VehicleDto, SignalDto, LegDto, AllowedGreenSignalCombinationDto
 )
@@ -450,7 +453,7 @@ class TrafficSimulationEnvHandler():
         self._simulation_is_running = True
 
         logger.info('Traffic simulation - starting sumo....')
-        sumoBinary = checkBinary('sumo')
+        sumoBinary = checkBinary(sumo_version)
 
         sim_instance = uuid4().hex
 
@@ -472,7 +475,7 @@ class TrafficSimulationEnvHandler():
             
             if self.simulation_ticks < (self._test_duration_seconds + self.warm_up_ticks):
                 self._run_one_tick()
-                sleep(1)
+                sleep(sleep_time)
             else:
                 self._run_one_tick(terminates_now=True)
                 break
