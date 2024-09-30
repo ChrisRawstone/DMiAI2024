@@ -95,18 +95,18 @@ def get_dataloaders(batch_size, img_size):
         A.HorizontalFlip(p=0.5),
         A.VerticalFlip(p=0.5),
         A.Rotate(limit=30, p=0.5),
-        A.RandomBrightnessContrast(p=0.5),
-        A.RandomGamma(p=0.5),
+        # A.RandomBrightnessContrast(p=0.5),
+        # A.RandomGamma(p=0.5),
         A.GaussianBlur(blur_limit=3, p=0.3),
-        A.Normalize(mean=(0.485, 0.456, 0.406),  # Using ImageNet means
-                    std=(0.229, 0.224, 0.225)),   # Using ImageNet stds
+        A.Normalize(mean=(0.485, 0.485, 0.485),  # Using ImageNet means  alternative : A.Normalize(mean=(0.485, 0.456, 0.406), 
+                    std=(0.229, 0.229, 0.229)),   # Using ImageNet stds  alternative : std=(0.229, 0.224, 0.225)),
         ToTensorV2(),
     ])
 
     val_transform = A.Compose([
         A.Resize(img_size, img_size),
-        A.Normalize(mean=(0.485, 0.456, 0.406),  # Using ImageNet means
-                    std=(0.229, 0.224, 0.225)),   # Using ImageNet stds
+        A.Normalize(mean=(0.485, 0.485, 0.485),  # Using ImageNet means
+                    std=(0.229, 0.229, 0.229)),   # Using ImageNet stds
         ToTensorV2(),
     ])
 
@@ -298,6 +298,9 @@ def get_model_parallel(model):
         logging.info("Using a single GPU.")
     return model
 
+global best_custom_score
+best_custom_score = 0
+
 def objective(trial):
     """
     Objective function for Optuna hyperparameter optimization.
@@ -308,21 +311,22 @@ def objective(trial):
     Returns:
         float: Validation custom score to maximize.
     """
+    global best_custom_score
     # Hyperparameters to tune
     model_name = trial.suggest_categorical('model_name', ['ViT', 'ResNet50', 'EfficientNet', 'MobileNetV3'])
 
     if model_name == 'ViT':
         img_size = 224  # Fixed for ViT
     else:
-        img_size = trial.suggest_categorical('img_size', [224, 256, 299])
+        img_size = trial.suggest_categorical('img_size', [224, 256, 299, 331, 350, 400])
 
-    batch_size = trial.suggest_categorical('batch_size', [32, 64, 128])
-    lr = trial.suggest_float('lr', 1e-5, 1e-3, log=True)
+    batch_size = trial.suggest_categorical('batch_size', [4, 8, 16, 32, 64, 128])
+    lr = trial.suggest_float('lr', 1e-6, 1e-2, log=True)
     weight_decay = trial.suggest_float('weight_decay', 1e-6, 1e-2, log=True)
     gamma = trial.suggest_float('gamma', 1.0, 3.0)
     alpha = trial.suggest_float('alpha', 0.1, 0.9)
 
-    num_epochs = 10  # For quick experimentation; increase for better results
+    num_epochs = 30  # For quick experimentation; increase for better results
 
     # Get model
     models_dict = get_models()
@@ -343,9 +347,10 @@ def objective(trial):
     # Mixed Precision Scaler
     scaler = torch.amp.GradScaler("cuda")  # Updated to use torch.cuda.amp
 
-    best_custom_score = 0
 
     for epoch in range(num_epochs):
+        logging.info(f"Epoch {epoch+1}/{num_epochs}")
+
         model.train()
         train_loss = 0
         train_preds = []
@@ -430,7 +435,7 @@ def objective(trial):
             }
             with open('checkpoints/model_info_optuna.json', 'w') as f:
                 json.dump(model_info_optuna, f, indent=4)
-            logging.info("Optuna best model architecture and hyperparameters saved to 'checkpoints/model_info_optuna.json'.")
+            # logging.info("Optuna best model architecture and hyperparameters saved to 'checkpoints/model_info_optuna.json'.")
 
         # Report intermediate objective value
         trial.report(custom_score, epoch)
@@ -451,7 +456,7 @@ def objective(trial):
 # Ensure that the DataParallel setup is correctly applied within the objective function.
 
 study = optuna.create_study(direction='maximize')
-study.optimize(objective, n_trials=20, timeout=None)  # Increased n_trials for better hyperparameter exploration
+study.optimize(objective, n_trials=50, timeout=None)  # Increased n_trials for better hyperparameter exploration
 
 logging.info("===== Best Trial =====")
 best_trial = study.best_trial
@@ -485,7 +490,7 @@ def train_best_model(trial):
     gamma = trial.params['gamma']
     alpha = trial.params['alpha']
 
-    num_epochs = 10  # Increased epochs for final training
+    num_epochs = 100  # Increased epochs for final training
 
     # Get model
     models_dict = get_models()

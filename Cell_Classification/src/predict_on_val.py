@@ -52,14 +52,14 @@ def main():
     
     args = parser.parse_args()
 
-    # model_checkpoint = 'checkpoints/best_model_optuna.pth'
-    # model_info = 'checkpoints/model_info_optuna.json'
+    model_checkpoint = 'checkpoints/best_model_optuna.pth'
+    model_info = 'checkpoints/model_info_optuna.json'
 
     # model_checkpoint = 'checkpoints/best_model_final.pth'
     # model_info = 'checkpoints/model_info_final.json'
 
-    model_checkpoint = 'checkpoints/final_model_final.pth'
-    model_info = 'checkpoints/final_model_info_final.json'
+    # model_checkpoint = 'checkpoints/final_model_final.pth'
+    # model_info = 'checkpoints/final_model_info_final.json'
 
     # Display the configuration being used
     print("Evaluation Configuration:")
@@ -146,17 +146,10 @@ def main():
     # n0: Total true label 0
     # n1: Total true label 1
 
-    a0 = sum((gt == 0 and pred == 0) for gt, pred in zip(ground_truths, predictions))
-    a1 = sum((gt == 1 and pred == 1) for gt, pred in zip(ground_truths, predictions))
-    n0 = sum(gt == 0 for gt in ground_truths)
-    n1 = sum(gt == 1 for gt in ground_truths)
+    score = calculate_custom_score(predictions, ground_truths)
 
     # Handle division by zero
-    if n0 == 0 or n1 == 0:
-        score = 0.0
-        print("\nWarning: One of the classes has zero instances. Custom Score set to 0.0.")
-    else:
-        score = (a0 * a1) / (n0 * n1)
+
 
     print("\nEvaluation Metrics:")
     print(f"Accuracy : {accuracy:.4f}")
