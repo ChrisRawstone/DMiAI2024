@@ -1,5 +1,5 @@
+# make_dataset.py
 import os
-import sys
 import base64
 from pathlib import Path
 
@@ -8,8 +8,8 @@ import pandas as pd
 import cv2
 import torch
 from torch.utils.data import Dataset, DataLoader
-from torchvision import transforms
-from PIL import Image
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
 import matplotlib.pyplot as plt
 
 def setup_working_directory():
@@ -108,15 +108,15 @@ class LoadTifDataset(Dataset):
         # Convert 16-bit to 8-bit
         image = convert_16bit_to_8bit(image)
 
-        # Convert ndarray to PIL Image for transformations
-        image = Image.fromarray(image)
-
         # Convert grayscale to RGB by replicating channels
-        image = image.convert('RGB')
+        if len(image.shape) == 2:
+            image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
 
         # Apply the transformations
         if self.transform:
-            image = self.transform(image)
+            # Albumentations expects numpy array and returns a dictionary
+            transformed = self.transform(image=image)
+            image = transformed['image']
 
         return image, torch.tensor(label, dtype=torch.long)
 
@@ -132,6 +132,7 @@ class LoadTifDataset(Dataset):
         """
         return self.load_data(idx)
 
+setup_working_directory()
 # def save_images_as_grid(dataloader, classes, save_path, dataset_name):
 #     """
 #     Save all images from the dataloader in a single grid image.
@@ -166,6 +167,10 @@ class LoadTifDataset(Dataset):
 #     grid_cols = 8  # Adjust as needed
 #     grid_rows = (num_images + grid_cols - 1) // grid_cols
 
+#     # Define mean and std used in A.Normalize
+#     mean = np.array([0.485, 0.456, 0.406])
+#     std = np.array([0.229, 0.224, 0.225])
+
 #     # Create subplots
 #     fig, axes = plt.subplots(grid_rows, grid_cols, figsize=(grid_cols * 2, grid_rows * 2))
 
@@ -177,8 +182,9 @@ class LoadTifDataset(Dataset):
 #         label = labels[idx].item()
 #         class_name = classes[label] if classes else str(label)
 
-#         # Convert tensor to numpy array
+#         # Unnormalize the image
 #         img_np = image.permute(1, 2, 0).numpy()
+#         img_np = std * img_np + mean  # Unnormalize
 #         img_np = np.clip(img_np, 0, 1)  # Ensure the image is in [0,1]
 
 #         # Display the image
@@ -202,20 +208,25 @@ class LoadTifDataset(Dataset):
 #     setup_working_directory()
 
 #     # Define transformations for training data
-#     train_transform = transforms.Compose([
-#         transforms.Resize((224, 224)),
-#         transforms.RandomHorizontalFlip(),
-#         transforms.RandomRotation(15),
-#         transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
-#         transforms.Grayscale(num_output_channels=3),
-#         transforms.ToTensor(),
+#     img_size = 224
+#     train_transform = A.Compose([
+#         A.Resize(img_size, img_size),
+#         A.HorizontalFlip(p=0.5),
+#         A.VerticalFlip(p=0.5),
+#         A.Rotate(limit=30, p=0.5),
+#         A.RandomBrightnessContrast(p=0.5),
+#         A.RandomGamma(p=0.5),
+#         A.GaussianBlur(blur_limit=3, p=0.3),
+#         A.Normalize(mean=(0.485, 0.456, 0.406),  # Using ImageNet means
+#                     std=(0.229, 0.224, 0.225)),   # Using ImageNet stds
+#         ToTensorV2(),
 #     ])
 
-#     # Define transformations for validation data (no augmentation)
-#     val_transform = transforms.Compose([
-#         transforms.Resize((224, 224)),
-#         transforms.Grayscale(num_output_channels=3),
-#         transforms.ToTensor(),
+#     val_transform = A.Compose([
+#         A.Resize(img_size, img_size),
+#         A.Normalize(mean=(0.485, 0.456, 0.406),  # Using ImageNet means
+#                     std=(0.229, 0.224, 0.225)),   # Using ImageNet stds
+#         ToTensorV2(),
 #     ])
 
 #     image_dir = "data/training"
@@ -232,18 +243,18 @@ class LoadTifDataset(Dataset):
 #     dataloader_train = DataLoader(dataset_train, batch_size=16, shuffle=False)
 #     dataloader_val = DataLoader(dataset_val, batch_size=16, shuffle=False)
 
-    # # Example class names, modify as needed
-    # classes = ['class0', 'class1']  # Replace with actual class names
+#     # Example class names, modify as needed
+#     classes = ['class0', 'class1']  # Replace with actual class names
 
-    # # Directory where images will be saved
-    # save_directory = "saved_images"
-    # os.makedirs(save_directory, exist_ok=True)
+#     # Directory where images will be saved
+#     save_directory = "saved_images"
+#     os.makedirs(save_directory, exist_ok=True)
 
-    # # Save training images grid
-    # save_images_as_grid(dataloader_train, classes, save_directory, dataset_name='train')
+#     # Save training images grid
+#     save_images_as_grid(dataloader_train, classes, save_directory, dataset_name='train')
 
-    # # Save validation images grid
-    # save_images_as_grid(dataloader_val, classes, save_directory, dataset_name='val')
+#     # Save validation images grid
+#     save_images_as_grid(dataloader_val, classes, save_directory, dataset_name='val')
 
 # if __name__ == "__main__":
 #     main()
