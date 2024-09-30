@@ -232,18 +232,19 @@ class LoadTifDataset(Dataset):
 #     dataloader_train = DataLoader(dataset_train, batch_size=16, shuffle=False)
 #     dataloader_val = DataLoader(dataset_val, batch_size=16, shuffle=False)
 
-    # # Example class names, modify as needed
-    # classes = ['class0', 'class1']  # Replace with actual class names
+#     # Example class names, modify as needed
+#     classes = ['class0', 'class1']  # Replace with actual class names
 
-    # # Directory where images will be saved
-    # save_directory = "saved_images"
-    # os.makedirs(save_directory, exist_ok=True)
+#     # Directory where images will be saved
+#     save_directory = "saved_images"
+#     os.makedirs(save_directory, exist_ok=True)
 
-    # # Save training images grid
-    # save_images_as_grid(dataloader_train, classes, save_directory, dataset_name='train')
+#     # Save training images grid
+#     save_images_as_grid(dataloader_train, classes, save_directory, dataset_name='train')
 
-    # # Save validation images grid
-    # save_images_as_grid(dataloader_val, classes, save_directory, dataset_name='val')
+#     # Save validation images grid
+#     save_images_as_grid(dataloader_val, classes, save_directory, dataset_name='val')
 
 # if __name__ == "__main__":
 #     main()
+setup_working_directory()
