@@ -450,7 +450,7 @@ class TrafficSimulationEnvHandler():
         self._simulation_is_running = True
 
         logger.info('Traffic simulation - starting sumo....')
-        sumoBinary = checkBinary('sumo')
+        sumoBinary = checkBinary('sumo-gui')
 
         sim_instance = uuid4().hex
 
