@@ -19,6 +19,7 @@ from albumentations.pytorch import ToTensorV2
 import wandb
 import random
 import logging
+import gc
 
 from sklearn.metrics import accuracy_score
 from tqdm import tqdm
@@ -37,14 +38,16 @@ wandb.login(key="c187178e0437c71d461606e312d20dc9f1c6794f")
 # 1. Setup and Configuration
 # ===============================
 
-def set_seed(seed=42):
+SEED = 0
+
+def set_seed(seed=SEED):
     """Set random seeds for reproducibility."""
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
 
-set_seed(42)
+set_seed(SEED)
 
 # Define device and check available GPUs
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -398,6 +401,9 @@ def objective(trial):
     Returns:
         float: Validation custom score to maximize.
     """
+    torch.cuda.empty_cache()  # Clears the memory cache on the GPU
+    gc.collect()  # Collects unreferenced objects in Python memory
+
     global best_custom_score
 
     # ---------------------------
@@ -414,18 +420,18 @@ def objective(trial):
     else:
         img_size = trial.suggest_categorical(
             'img_size',
-            [224, 299, 400, 500, 600, 700, 800, 900, 1000]
+            [224]
         )
 
-    batch_size = trial.suggest_categorical('batch_size', [4, 8, 16, 32])
+    batch_size = trial.suggest_categorical('batch_size', [4, 8])
     lr = trial.suggest_float('lr', 1e-6, 1e-2, log=True)
     weight_decay = trial.suggest_float('weight_decay', 1e-6, 1e-2, log=True)
     gamma = trial.suggest_float('gamma', 1.0, 3.0)
     alpha = trial.suggest_float('alpha', 0.1, 0.9)
 
-    num_epochs = 1  # Total number of epochs
-    patience = 10    # Early stopping patience
-    
+    num_epochs = 2  # Total number of epochs
+    patience = 20    # Early stopping patience
+
 
     # ---------------------------
     # 2. Initialize wandb Run
@@ -442,6 +448,9 @@ def objective(trial):
         'patience': patience
     }
 
+
+
+
     wandb.init(
         project='Cell_Classification',  # Replace with your wandb project name
         config=wandb_config,
@@ -449,10 +458,9 @@ def objective(trial):
         name=f"trial_{trial.number}"
     )
 
-    # running model with this configuration
-    logging.info("###############################################")
-    logging.info(f"Running model: {model_name} with Image Size: {img_size}, Batch Size: {batch_size}, LR: {lr}, Weight Decay: {weight_decay}, Gamma: {gamma}, Alpha: {alpha}")
-    logging.info("###############################################")
+
+
+
 
     # ---------------------------
     # 3. Model and Data Setup
@@ -466,10 +474,49 @@ def objective(trial):
 
     criterion = FocalLoss(alpha=alpha, gamma=gamma, logits=True).to(device)
 
-    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+    # ---------------------------
+    # 3. Optimizer setup
+    # ---------------------------
+
+    optimizer_name = trial.suggest_categorical('optimizer_name', ['AdamW', 'SGD', 'RMSprop'])
+
+    # Add specific configurations based on the optimizer chosen
+    if optimizer_name == 'SGD':
+        momentum = trial.suggest_float('momentum', 0.8, 0.99)
+        optimizer = optim.SGD(model.parameters(), lr=lr, momentum=momentum, weight_decay=weight_decay)
+    elif optimizer_name == 'AdamW' or optimizer_name == 'Adam':
+        beta1 = trial.suggest_float('beta1', 0.8, 0.99)
+        beta2 = trial.suggest_float('beta2', 0.9, 0.999)
+        epsilon = trial.suggest_float('epsilon', 1e-8, 1e-6)
+        optimizer = optim.AdamW(model.parameters(), lr=lr, betas=(beta1, beta2), eps=epsilon, weight_decay=weight_decay)
+    elif optimizer_name == 'RMSprop':
+        alpha = trial.suggest_float('alpha', 0.9, 0.99)
+        epsilon = trial.suggest_float('epsilon', 1e-8, 1e-6)
+        optimizer = optim.RMSprop(model.parameters(), lr=lr, alpha=alpha, eps=epsilon, weight_decay=weight_decay)
+
+
+    wandb_config.update({
+    'optimizer_name': optimizer_name,
+    'momentum': momentum if optimizer_name == 'SGD' else None,
+    'beta1': beta1 if optimizer_name in ['AdamW', 'Adam'] else None,
+    'beta2': beta2 if optimizer_name in ['AdamW', 'Adam'] else None,
+    'epsilon': epsilon if optimizer_name in ['AdamW', 'Adam', 'RMSprop'] else None,
+    'alpha': alpha if optimizer_name == 'RMSprop' else None
+    })
+
+    # ---------------------------
+    # 3. Optimizer setup end
+    # ---------------------------
+
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
 
     scaler = torch.amp.GradScaler("cuda")  # For mixed precision training
+
+    # running model with this configuration
+    logging.info("###############################################")
+    logging.info(f"Running model: {model_name} with Image Size: {img_size}, Batch Size: {batch_size}, LR: {lr}, Weight Decay: {weight_decay}, Gamma: {gamma}, Alpha: {alpha}")
+    logging.info(f"with optimizer setting: {optimizer_name}")
+    logging.info("###############################################")
 
     # ---------------------------
     # 4. Training with Early Stopping
@@ -580,7 +627,8 @@ def objective(trial):
                         'learning_rate': lr,
                         'weight_decay': weight_decay,
                         'gamma': gamma,
-                        'alpha': alpha
+                        'alpha': alpha,
+                        'custom_score' : custom_score
                     }
                     with open('checkpoints/model_info_optuna.json', 'w') as f:
                         json.dump(model_info_optuna, f, indent=4)
@@ -612,6 +660,9 @@ def objective(trial):
         raise
 
     wandb.finish()
+
+    torch.cuda.empty_cache()  # Clears the memory cache on the GPU
+    gc.collect()  # Collects unreferenced objects in Python memory
 
     return best_custom_score
 
@@ -659,7 +710,7 @@ def train_best_model(trial):
     gamma = trial.params['gamma']
     alpha = trial.params['alpha']
 
-    num_epochs = 70  # Increased epochs for final training
+    num_epochs = 100  # Increased epochs for final training
 
     # Get model
     models_dict = get_models()
@@ -681,7 +732,7 @@ def train_best_model(trial):
     scaler = torch.amp.GradScaler("cuda")  # Updated to use torch.cuda.amp
 
     best_custom_score = 0
-    early_stopping_patience = 10
+    early_stopping_patience = 50
     patience_counter = 0
 
     # Initialize model_info dictionary
@@ -862,3 +913,4 @@ def train_best_model(trial):
 
 # Train the best model
 train_best_model(best_trial)
+
