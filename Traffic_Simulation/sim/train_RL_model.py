@@ -3,7 +3,7 @@ from multiprocessing import Process, Queue
 from time import sleep, time
 import numpy as np
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import List
 
 from environment import load_and_run_simulation
@@ -23,15 +23,14 @@ logging.basicConfig(
 @dataclass
 class EnhancedState:
     vehicle_counts: List[int]
-    average_speeds: List[float]
-    waiting_times: List[float]
+    average_speeds: List[int]
+    waiting_times: List[int]
     current_signal_states: List[str]
     elapsed_time_since_last_action: int
-    time_of_day: float  # Normalized to [0,1]
 
 class RLAgent:
-    def __init__(self, state_size, action_size, alpha=0.2, gamma=0.95,
-                 epsilon=1.0, epsilon_min=0.01, epsilon_decay=0.999):
+    def __init__(self, state_size, action_size, alpha=0.1, gamma=0.9,
+                 epsilon=1.0, epsilon_min=0.01, epsilon_decay=0.995):
         self.q_table = defaultdict(float)  # mapping from state-action to value
         self.state_size = state_size
         self.action_size = action_size
@@ -40,23 +39,18 @@ class RLAgent:
         self.epsilon = epsilon  # exploration rate
         self.epsilon_min = epsilon_min
         self.epsilon_decay = epsilon_decay
-        self.action_history = []  # To track consecutive actions for penalties
 
     def get_state_key(self, state: EnhancedState):
-        # Normalize average speeds and waiting times
-        speed_bins = tuple(np.digitize(state.average_speeds, bins=[0, 5, 10, 15, 20, 25, 30]) / 6)
-        waiting_time_bins = tuple(np.digitize(state.waiting_times, bins=[0, 10, 20, 30, 40, 50, 60]) / 6)
-
-        # Include time of day as a feature
-        time_of_day = round(state.time_of_day, 2)  # Rounded for discretization
+        # Discretize average speeds and waiting times
+        speed_bins = np.digitize(state.average_speeds, bins=[0, 5, 10, 15, 20, 25, 30])
+        waiting_time_bins = np.digitize(state.waiting_times, bins=[0, 10, 20, 30, 40, 50, 60])
 
         return (
             tuple(state.vehicle_counts),
-            speed_bins,
-            waiting_time_bins,
+            tuple(speed_bins),
+            tuple(waiting_time_bins),
             tuple(state.current_signal_states),
-            state.elapsed_time_since_last_action,
-            time_of_day
+            state.elapsed_time_since_last_action
         )
 
     def choose_action(self, state: EnhancedState):
@@ -64,7 +58,6 @@ class RLAgent:
             # Explore: choose a random action
             action = np.random.choice(self.action_size)
             logging.debug(f"Exploring: Chose random action {action}")
-            self.action_history.append(action)
             return action
         else:
             # Exploit: choose the best action from Q-table
@@ -75,7 +68,6 @@ class RLAgent:
             actions_with_max_q = [a for a in range(self.action_size) if q_values[a] == max_q]
             action = np.random.choice(actions_with_max_q)
             logging.debug(f"Exploiting: Chose best action {action} with Q-value {max_q}")
-            self.action_history.append(action)
             return action
 
     def update_q_value(self, state: EnhancedState, action, reward, next_state: EnhancedState):
@@ -93,7 +85,6 @@ class RLAgent:
     def decay_epsilon(self):
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
-            logging.debug(f"Epsilon decayed to {self.epsilon:.4f}")
 
 def generate_allowed_configurations(allowed_green_signal_combinations):
     # Predefine phases with a minimum duration
@@ -117,7 +108,7 @@ def get_enhanced_state_representation(state, signal_names, last_action_time, sim
 
         if vehicles_in_lane:
             avg_speed = sum(v.speed for v in vehicles_in_lane) / len(vehicles_in_lane)
-            average_speeds.append(avg_speed)  # Keep as float for normalization
+            average_speeds.append(int(avg_speed))
 
             # Safely compute average waiting time
             waiting_time_values = []
@@ -136,45 +127,34 @@ def get_enhanced_state_representation(state, signal_names, last_action_time, sim
                 waiting_time_values.append(waiting_time)
 
             avg_waiting_time = sum(waiting_time_values) / len(stopped_vehicles) if stopped_vehicles else 0
-            waiting_times.append(avg_waiting_time)  # Keep as float for normalization
+            waiting_times.append(int(avg_waiting_time))
         else:
-            average_speeds.append(0.0)
-            waiting_times.append(0.0)
+            average_speeds.append(0)
+            waiting_times.append(0)
 
     current_signal_states = [signal.state for signal in state.signals]
     elapsed_time = simulation_ticks - last_action_time
-
-    # Incorporate time of day (assuming simulation_ticks represent minutes)
-    minutes_in_day = 1440
-    time_of_day = (simulation_ticks % minutes_in_day) / minutes_in_day  # Normalized to [0, 1]
 
     return EnhancedState(
         vehicle_counts=vehicle_counts,
         average_speeds=average_speeds,
         waiting_times=waiting_times,
         current_signal_states=current_signal_states,
-        elapsed_time_since_last_action=elapsed_time,
-        time_of_day=time_of_day
+        elapsed_time_since_last_action=elapsed_time
     )
 
-def compute_reward(previous_total_score, current_total_score, elapsed_time, switching_penalty=2.0, excessive_duration_penalty=3.0, max_duration=60):
+def compute_reward(previous_total_score, current_total_score, rapid_switch_penalty=5):
     """
     Compute the reward based on the change in total score.
     Positive reward if the score has decreased (better performance).
-    Negative reward if the score has increased or if there's excessive duration.
+    Negative reward if the score has increased or if there's rapid switching.
     """
-    # Base reward is the improvement in score
+    # Reward is the reduction in total_score (since we want to minimize it)
     reward = previous_total_score - current_total_score
 
-    # Penalize if the total score worsens (i.e., more waiting)
+    # Penalize if current_total_score increased (i.e., more waiting)
     if reward < 0:
-        reward -= switching_penalty
-        logging.debug(f"Penalized for worsening score: {switching_penalty}")
-
-    # Additional penalty for excessive signal duration
-    if elapsed_time > max_duration:
-        reward -= excessive_duration_penalty
-        logging.debug(f"Penalized for excessive duration: {excessive_duration_penalty}")
+        reward -= rapid_switch_penalty  # Additional penalty for increased waiting
 
     return reward
 
@@ -184,6 +164,7 @@ def run_simulation(configuration_file, test_duration_seconds=600, random=True):
     input_queue = Queue()
     output_queue = Queue()
     error_queue = Queue()
+    errors = []
 
     p = Process(target=load_and_run_simulation, args=(
         configuration_file,
@@ -224,7 +205,7 @@ def run_episode(agent, configuration_file="models/1/glue_configuration.yaml",
             logging.warning("No state received. Terminating simulation.")
             p.terminate()
             p.join()
-            return None  # Return None to indicate failure
+            break
 
         if state.is_terminated:
             p.join()
@@ -236,7 +217,7 @@ def run_episode(agent, configuration_file="models/1/glue_configuration.yaml",
             # Initialize the agent
             signal_names = [signal.name for signal in state.signals]
             allowed_configurations = generate_allowed_configurations(state.allowed_green_signal_combinations)
-            state_size = len(signal_names) * 3 + len(state.signals) + 2  # Adjusted for EnhancedState
+            state_size = len(signal_names) * 3 + len(state.signals) + 1  # Example size calculation
             action_size = len(allowed_configurations)
             agent.state_size = state_size
             agent.action_size = action_size
@@ -274,11 +255,7 @@ def run_episode(agent, configuration_file="models/1/glue_configuration.yaml",
 
         # Compute reward if possible
         if previous_state is not None and previous_action is not None:
-            reward = compute_reward(
-                previous_total_score,
-                state.total_score,
-                current_state.elapsed_time_since_last_action
-            )
+            reward = compute_reward(previous_total_score, state.total_score)
             agent.update_q_value(previous_state, previous_action, reward, current_state)
             agent.decay_epsilon()
 
@@ -288,7 +265,7 @@ def run_episode(agent, configuration_file="models/1/glue_configuration.yaml",
 
     # End of simulation, return the score
     if state.total_score == 0:
-        state.total_score = 1e9  # Assign a large penalty if score is zero to avoid division errors
+        state.total_score = 1e9
 
     logging.info(f"Final inverted score: {state.total_score}")
 
@@ -297,7 +274,7 @@ def run_episode(agent, configuration_file="models/1/glue_configuration.yaml",
 def main():
     num_episodes = 300  # Set the number of training episodes
     configuration_file = "models/1/glue_configuration.yaml"
-    test_duration_seconds = 300  # Duration per simulation in seconds
+    test_duration_seconds = 300  # Duration per simulation
 
     # Initialize variables to track performance
     scores = []
@@ -316,7 +293,7 @@ def main():
 
     signal_names = [signal.name for signal in temp_state.signals]
     allowed_configurations = generate_allowed_configurations(temp_state.allowed_green_signal_combinations)
-    state_size = len(signal_names) * 3 + len(temp_state.signals) + 2  # Adjusted for EnhancedState
+    state_size = len(signal_names) * 3 + len(temp_state.signals) + 1  # Adjust based on EnhancedState
     action_size = len(allowed_configurations)
 
     # Initialize RL agent
@@ -343,9 +320,9 @@ def main():
                 logging.info(f"New best score achieved: {best_score}. Saving model...")
 
                 # Define filenames with episode number and timestamp
-                timestamp = int(time())
-                q_table_filename = os.path.join(model_save_dir, f'q_table_episode_{episode}_{timestamp}.pkl')
-                agent_params_filename = os.path.join(model_save_dir, f'agent_parameters_episode_{episode}_{timestamp}.pkl')
+                timestamp = time()
+                q_table_filename = os.path.join(model_save_dir, f'q_table_episode_{episode}_{int(timestamp)}.pkl')
+                agent_params_filename = os.path.join(model_save_dir, f'agent_parameters_episode_{episode}_{int(timestamp)}.pkl')
 
                 # Save the trained Q-table
                 with open(q_table_filename, 'wb') as f:
@@ -395,3 +372,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+
