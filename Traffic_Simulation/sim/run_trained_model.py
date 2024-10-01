@@ -284,10 +284,7 @@ def run_episode(agent, configuration_file="models/1/glue_configuration.yaml",
 
 def main():
     parser = argparse.ArgumentParser(description="Run one episode using a saved RL model for traffic simulation.")
-    parser.add_argument('--q_table', type=str, required=True,
-                        help="Path to the saved Q-table file (e.g., improved_models/q_table_episode_5_1701234567.pkl)")
-    parser.add_argument('--agent_params', type=str, required=True,
-                        help="Path to the saved agent parameters file (e.g., improved_models/agent_parameters_episode_5_1701234567.pkl)")
+
     parser.add_argument('--configuration_file', type=str, default="models/1/glue_configuration.yaml",
                         help="Path to the traffic simulation configuration file")
     parser.add_argument('--test_duration', type=int, default=300,
@@ -296,23 +293,27 @@ def main():
                         help="Run simulation in random mode")
     args = parser.parse_args()
 
+
+    q_table = "improved_models/q_table_worker_10_episode_7_score_18077.872429468152_1727805094.pkl"
+    agent_params = "improved_models/agent_parameters_worker_10_episode_7_score_18077.872429468152_1727805094.pkl"
+
     # Validate file paths
-    if not os.path.isfile(args.q_table):
-        logging.error(f"Q-table file '{args.q_table}' does not exist.")
+    if not os.path.isfile(q_table):
+        logging.error(f"Q-table file '{q_table}' does not exist.")
         return
-    if not os.path.isfile(args.agent_params):
-        logging.error(f"Agent parameters file '{args.agent_params}' does not exist.")
+    if not os.path.isfile(agent_params):
+        logging.error(f"Agent parameters file '{agent_params}' does not exist.")
         return
 
     # Load the saved Q-table
-    with open(args.q_table, 'rb') as f:
+    with open(q_table, 'rb') as f:
         loaded_q_table = pickle.load(f)
-    logging.info(f"Loaded Q-table from '{args.q_table}'.")
+    logging.info(f"Loaded Q-table from '{q_table}'.")
 
     # Load the saved agent parameters
-    with open(args.agent_params, 'rb') as f:
+    with open(agent_params, 'rb') as f:
         loaded_agent_params = pickle.load(f)
-    logging.info(f"Loaded agent parameters from '{args.agent_params}'.")
+    logging.info(f"Loaded agent parameters from '{agent_params}'.")
 
     # Initialize the RL agent with loaded parameters
     agent = RLAgent(

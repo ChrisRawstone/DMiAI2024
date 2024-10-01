@@ -1,6 +1,6 @@
 import pickle
 import multiprocessing
-from multiprocessing import Process, Queue, current_process
+from multiprocessing import Process, Queue, current_process, Manager
 from time import sleep, time
 import numpy as np
 from collections import defaultdict
@@ -184,7 +184,8 @@ def run_simulation(configuration_file, test_duration_seconds=600, random_flag=Tr
 
     return p, input_queue, output_queue, error_queue
 
-def worker_main(worker_id, num_episodes, configuration_file, test_duration_seconds, random_flag, model_save_dir, state_size, action_size):
+def worker_main(worker_id, num_episodes, configuration_file, test_duration_seconds, random_flag,
+               model_save_dir, state_size, action_size, shared_best_score, lock):
     # Configure logging for the worker
     logger = multiprocessing.get_logger()
     logger.setLevel(logging.INFO)
@@ -197,9 +198,6 @@ def worker_main(worker_id, num_episodes, configuration_file, test_duration_secon
     # Initialize RLAgent
     agent = RLAgent(state_size, action_size)
     logger.info(f"Initialized RLAgent with state size {state_size} and action size {action_size}")
-
-    # Track performance
-    best_score = float('inf')  # Lower is better
 
     for episode in range(1, num_episodes + 1):
         logger.info(f"Starting Episode {episode}/{num_episodes}")
@@ -223,7 +221,7 @@ def worker_main(worker_id, num_episodes, configuration_file, test_duration_secon
                     p.join()
                     break
 
-                if state.is_terminated:
+                if hasattr(state, 'is_terminated') and state.is_terminated:
                     p.join()
                     break
 
@@ -282,36 +280,41 @@ def worker_main(worker_id, num_episodes, configuration_file, test_duration_secon
                     state.total_score = 1e9  # Assign a high score if zero
                 logger.info(f"Episode {episode} Final inverted score: {state.total_score}")
 
-                # Check if current score is better than best_score
-                if state.total_score < best_score:
-                    best_score = state.total_score
-                    logger.info(f"New best score achieved: {best_score}. Saving model...")
+                # Check against the shared best score
+                with lock:
+                    if state.total_score < shared_best_score[0]:
+                        shared_best_score[0] = state.total_score
+                        logger.info(f"New global best score achieved: {shared_best_score[0]}. Saving model...")
 
-                    # Define filenames with episode number and timestamp
-                    timestamp = int(time())
-                    q_table_filename = os.path.join(model_save_dir, f'q_table_worker_{worker_id}_episode_{episode}_{timestamp}.pkl')
-                    agent_params_filename = os.path.join(model_save_dir, f'agent_parameters_worker_{worker_id}_episode_{episode}_{timestamp}.pkl')
+                        # Define filenames with worker ID, episode number, and score
+                        timestamp = int(time())
+                        q_table_filename = os.path.join(model_save_dir,
+                                                        f'q_table_worker_{worker_id}_episode_{episode}_score_{shared_best_score[0]}_{timestamp}.pkl')
+                        agent_params_filename = os.path.join(model_save_dir,
+                                                            f'agent_parameters_worker_{worker_id}_episode_{episode}_score_{shared_best_score[0]}_{timestamp}.pkl')
 
-                    # Save the trained Q-table
-                    with open(q_table_filename, 'wb') as f:
-                        pickle.dump(dict(agent.q_table), f)
-                    logger.info(f"Q-table saved to '{q_table_filename}'.")
+                        # Save the trained Q-table
+                        with open(q_table_filename, 'wb') as f:
+                            pickle.dump(dict(agent.q_table), f)
+                        logger.info(f"Q-table saved to '{q_table_filename}'.")
 
-                    # Save additional agent parameters if needed
-                    agent_parameters = {
-                        'state_size': agent.state_size,
-                        'action_size': agent.action_size,
-                        'alpha': agent.alpha,
-                        'gamma': agent.gamma,
-                        'epsilon': agent.epsilon,
-                        'epsilon_min': agent.epsilon_min,
-                        'epsilon_decay': agent.epsilon_decay
-                    }
-                    with open(agent_params_filename, 'wb') as f:
-                        pickle.dump(agent_parameters, f)
-                    logger.info(f"Agent parameters saved to '{agent_params_filename}'.")
+                        # Save additional agent parameters if needed
+                        agent_parameters = {
+                            'state_size': agent.state_size,
+                            'action_size': agent.action_size,
+                            'alpha': agent.alpha,
+                            'gamma': agent.gamma,
+                            'epsilon': agent.epsilon,
+                            'epsilon_min': agent.epsilon_min,
+                            'epsilon_decay': agent.epsilon_decay
+                        }
+                        with open(agent_params_filename, 'wb') as f:
+                            pickle.dump(agent_parameters, f)
+                        logger.info(f"Agent parameters saved to '{agent_params_filename}'.")
             else:
                 logger.warning(f"Episode {episode} failed to retrieve total_score.")
+
+            logger.info(f"Completed Episode {episode}/{num_episodes}")
 
         except Exception as e:
             logger.error(f"An error occurred during Episode {episode}: {e}")
@@ -335,6 +338,11 @@ def main():
     # Create a directory to save improved models
     model_save_dir = "improved_models"
     os.makedirs(model_save_dir, exist_ok=True)
+
+    # Initialize Manager for shared best score and lock
+    manager = Manager()
+    shared_best_score = manager.list([float('inf')])  # Initialize with infinity
+    lock = manager.Lock()
 
     # Perform a temporary run to determine state_size and action_size
     logging.info("Performing a temporary simulation run to determine state and action sizes...")
@@ -361,13 +369,13 @@ def main():
 
     logging.info(f"Determined state_size: {state_size}, action_size: {action_size}")
 
-    # Initialize RLAgent for temporary run
+    # Initialize RLAgent for temporary run (not used further)
     temp_agent = RLAgent(state_size, action_size)
 
     temp_p.terminate()
     temp_p.join()
 
-    # Create and start worker processes
+    # Calculate episodes per worker, distributing the remaining episodes
     workers = []
     for i in range(num_cores):
         # Distribute remaining episodes among the first few workers
@@ -385,7 +393,9 @@ def main():
                 random_flag,
                 model_save_dir,
                 state_size,
-                action_size
+                action_size,
+                shared_best_score,
+                lock
             )
         )
         workers.append(worker)
@@ -402,6 +412,9 @@ def main():
     # Optionally, aggregate results here
     # For example, find the best Q-table among all saved models
     # This part can be customized based on specific needs
+
+    # Log the global best score achieved
+    logging.info(f"Global Best Score Achieved: {shared_best_score[0]}")
 
 if __name__ == '__main__':
     main()
