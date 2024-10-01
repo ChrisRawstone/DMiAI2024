@@ -6,20 +6,9 @@ from pydantic import BaseModel
 from sim.dtos import TrafficSimulationPredictResponseDto, TrafficSimulationPredictRequestDto, SignalDto
 from collections import defaultdict
 
-"""
-Max values for vehicle count data at tick 250:
-Vehicle count data at tick 250 map 1:
-Leg A1: 38 vehicles
-Leg A2: 22 vehicles
-Leg B1: 18 vehicles
-Leg B2: 51 vehicles
-
-Vehicle count data at tick 250 for map 2:
-Leg A1: 24 vehicles
-Leg A2: 17 vehicles
-Leg B1: 16 vehicles
-Leg B2: 14 vehicles
-"""
+# Logging variables for signal state durations and active group durations
+signal_state_durations = defaultdict(lambda: defaultdict(int))
+active_group_durations = defaultdict(int)
 
 # Traffic light parameters
 VEHICLE_THRESHOLD = 5  # Vehicle count to trigger reset
@@ -32,7 +21,9 @@ first_list = [
     ['B1', 'B1LeftTurn'],
     ['B2', 'B2LeftTurn']
 ]
-first_timer = [29, 20, 20, 35]  # Green light durations for first map in ticks
+
+first_timer = [25, 25, 25, 25]  # Green light durations for second map in ticks
+# first_timer = [29, 20, 20, 35]  # Green light durations for first map in ticks
 
 second_list = [
     ['A1', 'A1RightTurn', 'A1LeftTurn'],
@@ -40,7 +31,10 @@ second_list = [
     ['B1', 'B1RightTurn', 'A1RightTurn'],
     ['B2', 'A2RightTurn', 'B1RightTurn']  # Optimize this, B1 and B1RightTurn seem redundant here
 ]
-second_timer = [28, 27, 27, 25]  # Green light durations for second map in ticks
+
+second_timer = [25, 25, 25, 25]  # Green light durations for second map in ticks
+# second_timer = [28, 27, 27, 25]  # Green light durations for second map in ticks
+
 
 # Initial setup
 app = FastAPI()
@@ -49,6 +43,7 @@ current_timer = first_timer  # Start with first timer
 current_index = 0
 last_switch_tick = 0  # Use ticks to track when the last switch happened
 tick_count = 0
+current_map = 1  # Track the current map (1 or 2)
 
 @app.get('/api')
 def hello():
@@ -65,7 +60,8 @@ timetochange = False
 
 @app.post('/predict', response_model=TrafficSimulationPredictResponseDto)
 def predict_endpoint(request: TrafficSimulationPredictRequestDto):
-    global current_list, current_timer, current_index, tick_count, last_switch_tick, timetochange
+    global current_list, current_timer, current_index, tick_count, last_switch_tick, timetochange, current_map
+    global signal_state_durations, active_group_durations
 
     # Decode request data
     vehicles = request.vehicles
@@ -82,6 +78,7 @@ def predict_endpoint(request: TrafficSimulationPredictRequestDto):
     if timetochange:
         if len(vehicles) < VEHICLE_THRESHOLD:
             logger.warning("Reset detected! Switching to the second signal list.")
+            current_map = 2
             current_list = second_list
             current_timer = second_timer  # Switch to second timer
             current_index = 0
@@ -128,12 +125,30 @@ def predict_endpoint(request: TrafficSimulationPredictRequestDto):
 
     # Set signals to green if they are in the active group, otherwise set them to red
     for signal in signals:
+        # Track the signal state based on signal.state
+        if signal.state == "green":
+            signal_state_durations[signal.name]["green"] += 1
+        elif signal.state == "red":
+            signal_state_durations[signal.name]["red"] += 1
+        elif signal.state == "amber":
+            signal_state_durations[signal.name]["amber"] += 1
+        elif signal.state == "redamber":
+            signal_state_durations[signal.name]["redamber"] += 1
+
+        # Track how long the signal has been part of the active group
+        if signal.name in active_group:
+            active_group_durations[signal.name] += 1
+
+        # Update signal state for the next tick
         if signal.name in active_group:
             next_signals.append(SignalDto(name=signal.name, state="green"))
-            logger.info(f"\033[92mSignal {signal.name} is {signal.state} with {signal_group_vehicle_counts[signal.name]} vehicles.\033[0m")
+            logger.info(f"\033[92mSignal {signal.name} is {signal.state} (green in active group) with {signal_group_vehicle_counts[signal.name]} vehicles.\033[0m")
         else:
             next_signals.append(SignalDto(name=signal.name, state="red"))
-            logger.info(f"\033[91mSignal {signal.name} is {signal.state} with {signal_group_vehicle_counts[signal.name]} vehicles.\033[0m")
+            logger.info(f"\033[91mSignal {signal.name} is {signal.state} (not in active group) with {signal_group_vehicle_counts[signal.name]} vehicles.\033[0m")
+
+    # Update the text file silently after each tick
+    log_results_to_file(current_map)
 
     # Return the updated signals to the simulation
     response = TrafficSimulationPredictResponseDto(
@@ -142,6 +157,16 @@ def predict_endpoint(request: TrafficSimulationPredictRequestDto):
 
     return response
 
+def log_results_to_file(map_number):
+    filename = f"traffic_log_map_{map_number}.txt"
+    with open(filename, "w") as f:
+        f.write(f"Results for map {map_number} at tick {tick_count}:\n")
+        f.write("Signal state durations (in ticks):\n")
+        for signal, states in signal_state_durations.items():
+            f.write(f"Signal {signal}: {states}\n")
+        f.write("\nActive group durations (in ticks):\n")
+        for signal, ticks in active_group_durations.items():
+            f.write(f"Signal {signal}: {ticks} ticks in active group\n")
 
 if __name__ == '__main__':
     uvicorn.run(

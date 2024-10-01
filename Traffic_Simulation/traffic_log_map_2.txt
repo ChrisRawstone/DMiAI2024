@@ -1,0 +1,26 @@
+Results for map 2 at tick 310:
+Signal state durations (in ticks):
+Signal A1: defaultdict(<class 'int'>, {'red': 447, 'redamber': 12, 'green': 137, 'amber': 24})
+Signal A1LeftTurn: defaultdict(<class 'int'>, {'red': 447, 'redamber': 12, 'green': 137, 'amber': 24})
+Signal A2: defaultdict(<class 'int'>, {'red': 446, 'redamber': 12, 'green': 138, 'amber': 24})
+Signal A2LeftTurn: defaultdict(<class 'int'>, {'red': 446, 'redamber': 12, 'green': 138, 'amber': 24})
+Signal B1: defaultdict(<class 'int'>, {'red': 446, 'redamber': 12, 'green': 138, 'amber': 24})
+Signal B1LeftTurn: defaultdict(<class 'int'>, {'red': 223, 'redamber': 6, 'green': 69, 'amber': 12})
+Signal B2: defaultdict(<class 'int'>, {'red': 455, 'redamber': 12, 'green': 137, 'amber': 16})
+Signal B2LeftTurn: defaultdict(<class 'int'>, {'red': 227, 'redamber': 6, 'green': 69, 'amber': 8})
+Signal A1RightTurn: defaultdict(<class 'int'>, {'red': 136, 'redamber': 12, 'green': 138, 'amber': 24})
+Signal A2RightTurn: defaultdict(<class 'int'>, {'red': 141, 'redamber': 12, 'green': 137, 'amber': 20})
+Signal B1RightTurn: defaultdict(<class 'int'>, {'red': 153, 'redamber': 6, 'green': 143, 'amber': 8})
+
+Active group durations (in ticks):
+Signal A1: 170 ticks in active group
+Signal A1LeftTurn: 170 ticks in active group
+Signal A2: 150 ticks in active group
+Signal A2LeftTurn: 150 ticks in active group
+Signal B1: 150 ticks in active group
+Signal B1LeftTurn: 75 ticks in active group
+Signal B2: 150 ticks in active group
+Signal B2LeftTurn: 75 ticks in active group
+Signal A1RightTurn: 160 ticks in active group
+Signal A2RightTurn: 150 ticks in active group
+Signal B1RightTurn: 150 ticks in active group

@@ -1,0 +1,20 @@
+Results for map 1 at tick 310:
+Signal state durations (in ticks):
+Signal A1: defaultdict(<class 'int'>, {'red': 224, 'redamber': 6, 'green': 68, 'amber': 12})
+Signal A1LeftTurn: defaultdict(<class 'int'>, {'red': 224, 'redamber': 6, 'green': 68, 'amber': 12})
+Signal A2: defaultdict(<class 'int'>, {'red': 223, 'redamber': 6, 'green': 69, 'amber': 12})
+Signal A2LeftTurn: defaultdict(<class 'int'>, {'red': 223, 'redamber': 6, 'green': 69, 'amber': 12})
+Signal B1: defaultdict(<class 'int'>, {'red': 223, 'redamber': 6, 'green': 69, 'amber': 12})
+Signal B1LeftTurn: defaultdict(<class 'int'>, {'red': 223, 'redamber': 6, 'green': 69, 'amber': 12})
+Signal B2: defaultdict(<class 'int'>, {'red': 227, 'redamber': 6, 'green': 69, 'amber': 8})
+Signal B2LeftTurn: defaultdict(<class 'int'>, {'red': 227, 'redamber': 6, 'green': 69, 'amber': 8})
+
+Active group durations (in ticks):
+Signal A1: 85 ticks in active group
+Signal A1LeftTurn: 85 ticks in active group
+Signal A2: 75 ticks in active group
+Signal A2LeftTurn: 75 ticks in active group
+Signal B1: 75 ticks in active group
+Signal B1LeftTurn: 75 ticks in active group
+Signal B2: 75 ticks in active group
+Signal B2LeftTurn: 75 ticks in active group
