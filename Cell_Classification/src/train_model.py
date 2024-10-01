@@ -16,7 +16,7 @@ from torchvision.models import ViT_B_32_Weights, ResNet18_Weights, ViT_B_16_Weig
 from data.make_dataset import LoadTifDataset
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
-
+import wandb
 import random
 import logging
 
@@ -30,6 +30,8 @@ import optuna
 
 
 from src.utils import calculate_custom_score
+
+wandb.login(key="c187178e0437c71d461606e312d20dc9f1c6794f")
 
 # ===============================
 # 1. Setup and Configuration
@@ -388,7 +390,7 @@ best_custom_score = 0
 
 def objective(trial):
     """
-    Objective function for Optuna hyperparameter optimization.
+    Objective function for Optuna hyperparameter optimization with wandb integration and early stopping.
 
     Args:
         trial (optuna.trial.Trial): Optuna trial object.
@@ -397,13 +399,23 @@ def objective(trial):
         float: Validation custom score to maximize.
     """
     global best_custom_score
-    # Hyperparameters to tune
-    model_name = trial.suggest_categorical('model_name', ['ViT16', 'ResNet50', 'EfficientNet', 'MobileNetV3', "ResNet101", "ViT32", 'DenseNet121'])
 
-    if (model_name == 'ViT16' or model_name == "ViT32"):
+    # ---------------------------
+    # 1. Hyperparameter Sampling
+    # ---------------------------
+    model_name = trial.suggest_categorical(
+        'model_name',
+        ['ViT16', 'ResNet50', "ResNet18", 'EfficientNet', 'MobileNetV3', 
+         "ResNet101", "ViT32", 'DenseNet121']
+    )
+
+    if model_name in ['ViT16', "ViT32"]:
         img_size = 224  # Fixed for ViT
     else:
-        img_size = trial.suggest_categorical('img_size', [128, 224, 256, 299, 331, 350, 400, 500])
+        img_size = trial.suggest_categorical(
+            'img_size',
+            [224, 299, 400, 500, 600, 700, 800, 900, 1000]
+        )
 
     batch_size = trial.suggest_categorical('batch_size', [4, 8, 16, 32])
     lr = trial.suggest_float('lr', 1e-6, 1e-2, log=True)
@@ -411,123 +423,189 @@ def objective(trial):
     gamma = trial.suggest_float('gamma', 1.0, 3.0)
     alpha = trial.suggest_float('alpha', 0.1, 0.9)
 
-    num_epochs = 100  # For quick experimentation; increase for better results
+    num_epochs = 50  # Total number of epochs
+    patience = 10    # Early stopping patience
 
-    # Get model
+    # ---------------------------
+    # 2. Initialize wandb Run
+    # ---------------------------
+    wandb_config = {
+        'model_name': model_name,
+        'img_size': img_size,
+        'batch_size': batch_size,
+        'learning_rate': lr,
+        'weight_decay': weight_decay,
+        'gamma': gamma,
+        'alpha': alpha,
+        'num_epochs': num_epochs,
+        'patience': patience
+    }
+
+    wandb.init(
+        project='your_project_name',  # Replace with your wandb project name
+        config=wandb_config,
+        reinit=True,  # Allows multiple wandb runs in the same script
+        name=f"trial_{trial.number}"
+    )
+
+    # ---------------------------
+    # 3. Model and Data Setup
+    # ---------------------------
     models_dict = get_models()
     model = models_dict[model_name]
     model = get_model_parallel(model)
     model = model.to(device)
 
-    # Get dataloaders
     train_loader, val_loader = get_dataloaders(batch_size, img_size)
 
-    # Loss function
     criterion = FocalLoss(alpha=alpha, gamma=gamma, logits=True).to(device)
 
-    # Optimizer and Scheduler
     optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
 
-    # Mixed Precision Scaler
-    scaler = torch.amp.GradScaler("cuda")  # Updated to use torch.cuda.amp
+    scaler = torch.amp.GradScaler("cuda")  # For mixed precision training
 
+    # ---------------------------
+    # 4. Training with Early Stopping
+    # ---------------------------
+    best_score = -np.inf
+    epochs_without_improvement = 0
 
-    for epoch in range(num_epochs):
-        logging.info(f"Epoch {epoch+1}/{num_epochs}")
+    try:
+        for epoch in range(num_epochs):
+            logging.info(f"Epoch {epoch+1}/{num_epochs}")
 
-        model.train()
-        train_loss = 0
-        train_preds = []
-        train_targets = []
+            # Training Phase
+            model.train()
+            train_loss = 0
+            train_preds = []
+            train_targets = []
 
-        progress_bar = tqdm(train_loader, desc=f'Training Epoch {epoch+1}', leave=False)
-        for images, labels in progress_bar:
-            images = images.to(device, non_blocking=True)
-            labels = labels.float().unsqueeze(1).to(device, non_blocking=True)
-
-            optimizer.zero_grad()
-
-            with torch.amp.autocast("cuda"):  # Updated autocast usage
-                outputs = model(images)
-                loss = criterion(outputs, labels)
-
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
-
-            train_loss += loss.item() * images.size(0)
-
-            preds = torch.sigmoid(outputs).detach().cpu().numpy()
-            train_preds.extend(preds)
-            train_targets.extend(labels.detach().cpu().numpy())
-
-            progress_bar.set_postfix({'Loss': loss.item()})
-
-        avg_train_loss = train_loss / len(train_loader.dataset)
-
-        # Validation
-        model.eval()
-        val_loss = 0
-        val_preds = []
-        val_targets = []
-
-        with torch.no_grad():
-            progress_bar = tqdm(val_loader, desc='Validation', leave=False)
+            progress_bar = tqdm(train_loader, desc=f'Training Epoch {epoch+1}', leave=False)
             for images, labels in progress_bar:
                 images = images.to(device, non_blocking=True)
                 labels = labels.float().unsqueeze(1).to(device, non_blocking=True)
 
-                with torch.amp.autocast("cuda"):  # Updated autocast usage
+                optimizer.zero_grad()
+
+                with torch.amp.autocast("cuda"):  # Mixed precision
                     outputs = model(images)
                     loss = criterion(outputs, labels)
 
-                val_loss += loss.item() * images.size(0)
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+
+                train_loss += loss.item() * images.size(0)
 
                 preds = torch.sigmoid(outputs).detach().cpu().numpy()
-                val_preds.extend(preds)
-                val_targets.extend(labels.detach().cpu().numpy())
+                train_preds.extend(preds)
+                train_targets.extend(labels.detach().cpu().numpy())
 
-        avg_val_loss = val_loss / len(val_loader.dataset)
+                progress_bar.set_postfix({'Loss': loss.item()})
 
-        # Calculate custom score
-        preds_binary = (np.array(val_preds) > 0.5).astype(int)
-        custom_score = calculate_custom_score(val_targets, preds_binary)
+            avg_train_loss = train_loss / len(train_loader.dataset)
 
-        scheduler.step()
+            # Validation Phase
+            model.eval()
+            val_loss = 0
+            val_preds = []
+            val_targets = []
 
-        # Update best score and save model + JSON
-        if custom_score > best_custom_score:
-            best_custom_score = custom_score
+            with torch.no_grad():
+                progress_bar = tqdm(val_loader, desc='Validation', leave=False)
+                for images, labels in progress_bar:
+                    images = images.to(device, non_blocking=True)
+                    labels = labels.float().unsqueeze(1).to(device, non_blocking=True)
 
-            # Save the best model from Optuna hypertuning
-            save_path_optuna = 'checkpoints/best_model_optuna.pth'
-            if isinstance(model, nn.DataParallel):
-                torch.save(model.module.state_dict(), save_path_optuna)
+                    with torch.amp.autocast("cuda"):  # Mixed precision
+                        outputs = model(images)
+                        loss = criterion(outputs, labels)
+
+                    val_loss += loss.item() * images.size(0)
+
+                    preds = torch.sigmoid(outputs).detach().cpu().numpy()
+                    val_preds.extend(preds)
+                    val_targets.extend(labels.detach().cpu().numpy())
+
+            avg_val_loss = val_loss / len(val_loader.dataset)
+
+            # Calculate custom score
+            preds_binary = (np.array(val_preds) > 0.5).astype(int)
+            custom_score = calculate_custom_score(val_targets, preds_binary)
+
+            scheduler.step()
+
+            # ---------------------------
+            # 5. Logging Metrics to wandb
+            # ---------------------------
+            wandb.log({
+                'epoch': epoch + 1,
+                'train_loss': avg_train_loss,
+                'val_loss': avg_val_loss,
+                'custom_score': custom_score,
+                'learning_rate': scheduler.get_last_lr()[0]
+            })
+
+            # ---------------------------
+            # 6. Early Stopping Logic
+            # ---------------------------
+            if custom_score > best_score:
+                best_score = custom_score
+                epochs_without_improvement = 0
+
+                # Update global best score and save model locally
+                if custom_score > best_custom_score:
+                    best_custom_score = custom_score
+
+                    # Save the best model locally
+                    save_path_optuna = 'checkpoints/best_model_optuna.pth'
+                    if isinstance(model, nn.DataParallel):
+                        torch.save(model.module.state_dict(), save_path_optuna)
+                    else:
+                        torch.save(model.state_dict(), save_path_optuna)
+                    logging.info(f"New best Optuna model saved with Val Score: {best_custom_score:.4f}")
+
+                    # Save model hyperparameters locally
+                    model_info_optuna = {
+                        'model_name': model_name,
+                        'img_size': img_size,
+                        'batch_size': batch_size,
+                        'learning_rate': lr,
+                        'weight_decay': weight_decay,
+                        'gamma': gamma,
+                        'alpha': alpha
+                    }
+                    with open('checkpoints/model_info_optuna.json', 'w') as f:
+                        json.dump(model_info_optuna, f, indent=4)
             else:
-                torch.save(model.state_dict(), save_path_optuna)
-            logging.info(f"New best Optuna model saved with Val Score: {best_custom_score:.4f}")
+                epochs_without_improvement += 1
 
-            # Save model architecture and hyperparameters for Optuna best model
-            model_info_optuna = {
-                'model_name': model_name,
-                'img_size': img_size,
-                'batch_size': batch_size,
-                'learning_rate': lr,
-                'weight_decay': weight_decay,
-                'gamma': gamma,
-                'alpha': alpha
-            }
-            with open('checkpoints/model_info_optuna.json', 'w') as f:
-                json.dump(model_info_optuna, f, indent=4)
-            # logging.info("Optuna best model architecture and hyperparameters saved to 'checkpoints/model_info_optuna.json'.")
+            # Check if early stopping condition is met
+            if epochs_without_improvement >= patience:
+                logging.info(f"Early stopping triggered after {patience} epochs without improvement.")
+                break
 
-        # Report intermediate objective value
-        trial.report(custom_score, epoch)
+            # ---------------------------
+            # 7. Optuna Trial Reporting and Pruning
+            # ---------------------------
+            trial.report(custom_score, epoch)
 
-        # Handle pruning based on the intermediate value
-        if trial.should_prune():
-            raise optuna.exceptions.TrialPruned()
+            if trial.should_prune():
+                logging.info(f"Trial {trial.number} pruned at epoch {epoch+1}")
+                raise optuna.exceptions.TrialPruned()
+
+    except optuna.exceptions.TrialPruned:
+        wandb.log({'pruned': True})
+        wandb.finish(quiet=True)
+        raise
+
+    except Exception as e:
+        logging.error(f"An error occurred: {e}")
+        wandb.finish(quiet=True)
+        raise
+
+    wandb.finish()
 
     return best_custom_score
 
