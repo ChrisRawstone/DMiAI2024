@@ -10,7 +10,7 @@
 
 
 ### number of cores
-#BSUB -n 4
+#BSUB -n 6
 # request cpu
 #BSUB -R "rusage[mem=16G]"
 

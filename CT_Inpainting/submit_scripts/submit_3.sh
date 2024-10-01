@@ -5,8 +5,8 @@
 
 ### name of job, output file and err
 #BSUB -J CT-inpainting
-#BSUB -o hpc_logs/inpainting_%J.out
-#BSUB -e hpc_logs/inpainting_%J.err
+#BSUB -o inpainting_%J.out
+#BSUB -e inpainting_%J.err
 
 
 ### number of cores
@@ -39,4 +39,4 @@
 module load cuda/11.1
 source CT_Inpainting/CT_venv/bin/activate
 
-python CT_Inpainting/src/train_model.py
+python CT_Inpainting/src/train_model.py --config-name test_3

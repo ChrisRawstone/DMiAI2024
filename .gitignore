@@ -165,3 +165,4 @@ cython_debug/
 CT_Inpainting/data_sorted_by_vertebrae/
 wandb/
 hpc_logs/
+CT_Inpainting/classifiers/
