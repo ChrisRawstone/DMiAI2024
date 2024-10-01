@@ -1,22 +1,24 @@
 import pickle
-from multiprocessing import Process, Queue
+import multiprocessing
+from multiprocessing import Process, Queue, current_process
 from time import sleep, time
 import numpy as np
 from collections import defaultdict
 from dataclasses import dataclass
 from typing import List
 
-from environment import load_and_run_simulation
+from environment import load_and_run_simulation  # Ensure this module is accessible
 
 import logging
 import os
+import sys
 
-# Configure logging
+# Configure logging for the main process
 logging.basicConfig(
     level=logging.INFO,  # Change to DEBUG for more detailed logs
     format='%(asctime)s [%(levelname)s] %(message)s',
     handlers=[
-        logging.StreamHandler()
+        logging.StreamHandler(sys.stdout)
     ]
 )
 
@@ -158,19 +160,18 @@ def compute_reward(previous_total_score, current_total_score, rapid_switch_penal
 
     return reward
 
-def run_simulation(configuration_file, test_duration_seconds=600, random=True):
+def run_simulation(configuration_file, test_duration_seconds=600, random_flag=True):
     start_time = time()
 
     input_queue = Queue()
     output_queue = Queue()
     error_queue = Queue()
-    errors = []
 
     p = Process(target=load_and_run_simulation, args=(
         configuration_file,
         start_time,
         test_duration_seconds,
-        random,
+        random_flag,
         input_queue,
         output_queue,
         error_queue
@@ -181,196 +182,226 @@ def run_simulation(configuration_file, test_duration_seconds=600, random=True):
     # Wait for the simulation to start
     sleep(0.2)
 
-    # For logging
-    actions = {}
+    return p, input_queue, output_queue, error_queue
 
-    return p, input_queue, output_queue, error_queue, actions
+def worker_main(worker_id, num_episodes, configuration_file, test_duration_seconds, random_flag, model_save_dir, state_size, action_size):
+    # Configure logging for the worker
+    logger = multiprocessing.get_logger()
+    logger.setLevel(logging.INFO)
+    handler = logging.StreamHandler(sys.stdout)
+    formatter = logging.Formatter(f'%(asctime)s [Worker {worker_id}] [%(levelname)s] %(message)s')
+    handler.setFormatter(formatter)
+    if not logger.hasHandlers():
+        logger.addHandler(handler)
 
-def run_episode(agent, configuration_file="models/1/glue_configuration.yaml",
-               test_duration_seconds=600, random=True):
-    p, input_queue, output_queue, error_queue, actions = run_simulation(configuration_file, test_duration_seconds, random)
+    # Initialize RLAgent
+    agent = RLAgent(state_size, action_size)
+    logger.info(f"Initialized RLAgent with state size {state_size} and action size {action_size}")
 
-    agent_initialized = False
-    previous_state = None
-    previous_action = None
-    signal_names = []
-    allowed_configurations = []
-    last_action_time = 0  # Track the last time an action was taken
-    previous_total_score = 0
+    # Track performance
+    best_score = float('inf')  # Lower is better
 
-    while True:
+    for episode in range(1, num_episodes + 1):
+        logger.info(f"Starting Episode {episode}/{num_episodes}")
         try:
-            state = output_queue.get(timeout=5)  # Timeout to prevent hanging
-        except:
-            logging.warning("No state received. Terminating simulation.")
-            p.terminate()
-            p.join()
-            break
+            p, input_queue, output_queue, error_queue = run_simulation(configuration_file, test_duration_seconds, random_flag)
 
-        if state.is_terminated:
-            p.join()
-            break
+            agent_initialized = False
+            previous_state = None
+            previous_action = None
+            signal_names = []
+            allowed_configurations = []
+            last_action_time = 0  # Track the last time an action was taken
+            previous_total_score = 0
 
-        simulation_ticks = state.simulation_ticks
+            while True:
+                try:
+                    state = output_queue.get(timeout=5)  # Timeout to prevent hanging
+                except:
+                    logger.warning("No state received. Terminating simulation.")
+                    p.terminate()
+                    p.join()
+                    break
 
-        if not agent_initialized:
-            # Initialize the agent
-            signal_names = [signal.name for signal in state.signals]
-            allowed_configurations = generate_allowed_configurations(state.allowed_green_signal_combinations)
-            state_size = len(signal_names) * 3 + len(state.signals) + 1  # Example size calculation
-            action_size = len(allowed_configurations)
-            agent.state_size = state_size
-            agent.action_size = action_size
-            agent_initialized = True
-            logging.info("RL Agent initialized.")
+                if state.is_terminated:
+                    p.join()
+                    break
 
-        current_state = get_enhanced_state_representation(state, signal_names, last_action_time, simulation_ticks)
+                simulation_ticks = state.simulation_ticks
 
-        # Enforce minimum duration between actions (e.g., 30 ticks)
-        MIN_DURATION = 30
-        if current_state.elapsed_time_since_last_action < MIN_DURATION:
-            action_index = previous_action if previous_action is not None else np.random.choice(agent.action_size)
-            logging.debug(f"Continuing with previous action {action_index} due to minimum duration constraint.")
-        else:
-            action_index = agent.choose_action(current_state)
-            last_action_time = simulation_ticks  # Update the last action time
+                if not agent_initialized:
+                    # Initialize the agent
+                    signal_names = [signal.name for signal in state.signals]
+                    allowed_configurations = generate_allowed_configurations(state.allowed_green_signal_combinations)
+                    # state_size and action_size are passed from main
+                    agent_initialized = True
+                    logger.info("RL Agent initialized.")
 
-        selected_configuration = allowed_configurations[action_index]['signals']
-        min_duration = allowed_configurations[action_index]['min_duration']
-        logging.debug(
-            f"Tick {simulation_ticks}: Selected action {action_index} with configuration "
-            f"{selected_configuration} and min_duration {min_duration}"
-        )
+                current_state = get_enhanced_state_representation(state, signal_names, last_action_time, simulation_ticks)
 
-        prediction = {"signals": []}
-        for signal_name in signal_names:
-            if signal_name in selected_configuration:
-                prediction["signals"].append({"name": signal_name, "state": "green"})
+                # Enforce minimum duration between actions (e.g., 30 ticks)
+                MIN_DURATION = 30
+                if current_state.elapsed_time_since_last_action < MIN_DURATION:
+                    action_index = previous_action if previous_action is not None else np.random.choice(agent.action_size)
+                    logger.debug(f"Continuing with previous action {action_index} due to minimum duration constraint.")
+                else:
+                    action_index = agent.choose_action(current_state)
+                    last_action_time = simulation_ticks  # Update the last action time
+
+                selected_configuration = allowed_configurations[action_index]['signals']
+                min_duration = allowed_configurations[action_index]['min_duration']
+                logger.debug(
+                    f"Tick {simulation_ticks}: Selected action {action_index} with configuration "
+                    f"{selected_configuration} and min_duration {min_duration}"
+                )
+
+                prediction = {"signals": []}
+                for signal_name in signal_names:
+                    if signal_name in selected_configuration:
+                        prediction["signals"].append({"name": signal_name, "state": "green"})
+                    else:
+                        prediction["signals"].append({"name": signal_name, "state": "red"})
+
+                # Update the desired phase of the traffic lights
+                next_signals = {signal['name']: signal['state'] for signal in prediction['signals']}
+                input_queue.put(next_signals)
+
+                # Compute reward if possible
+                if previous_state is not None and previous_action is not None:
+                    reward = compute_reward(previous_total_score, state.total_score)
+                    agent.update_q_value(previous_state, previous_action, reward, current_state)
+                    agent.decay_epsilon()
+
+                previous_state = current_state
+                previous_action = action_index
+                previous_total_score = state.total_score
+
+            # End of simulation, return the score
+            if hasattr(state, 'total_score'):
+                if state.total_score == 0:
+                    state.total_score = 1e9  # Assign a high score if zero
+                logger.info(f"Episode {episode} Final inverted score: {state.total_score}")
+
+                # Check if current score is better than best_score
+                if state.total_score < best_score:
+                    best_score = state.total_score
+                    logger.info(f"New best score achieved: {best_score}. Saving model...")
+
+                    # Define filenames with episode number and timestamp
+                    timestamp = int(time())
+                    q_table_filename = os.path.join(model_save_dir, f'q_table_worker_{worker_id}_episode_{episode}_{timestamp}.pkl')
+                    agent_params_filename = os.path.join(model_save_dir, f'agent_parameters_worker_{worker_id}_episode_{episode}_{timestamp}.pkl')
+
+                    # Save the trained Q-table
+                    with open(q_table_filename, 'wb') as f:
+                        pickle.dump(dict(agent.q_table), f)
+                    logger.info(f"Q-table saved to '{q_table_filename}'.")
+
+                    # Save additional agent parameters if needed
+                    agent_parameters = {
+                        'state_size': agent.state_size,
+                        'action_size': agent.action_size,
+                        'alpha': agent.alpha,
+                        'gamma': agent.gamma,
+                        'epsilon': agent.epsilon,
+                        'epsilon_min': agent.epsilon_min,
+                        'epsilon_decay': agent.epsilon_decay
+                    }
+                    with open(agent_params_filename, 'wb') as f:
+                        pickle.dump(agent_parameters, f)
+                    logger.info(f"Agent parameters saved to '{agent_params_filename}'.")
             else:
-                prediction["signals"].append({"name": signal_name, "state": "red"})
+                logger.warning(f"Episode {episode} failed to retrieve total_score.")
 
-        # Update the desired phase of the traffic lights
-        next_signals = {signal['name']: signal['state'] for signal in prediction['signals']}
-        input_queue.put(next_signals)
+        except Exception as e:
+            logger.error(f"An error occurred during Episode {episode}: {e}")
 
-        # Compute reward if possible
-        if previous_state is not None and previous_action is not None:
-            reward = compute_reward(previous_total_score, state.total_score)
-            agent.update_q_value(previous_state, previous_action, reward, current_state)
-            agent.decay_epsilon()
-
-        previous_state = current_state
-        previous_action = action_index
-        previous_total_score = state.total_score
-
-    # End of simulation, return the score
-    if state.total_score == 0:
-        state.total_score = 1e9
-
-    logging.info(f"Final inverted score: {state.total_score}")
-
-    return state.total_score
+    logger.info(f"Worker {worker_id} completed all {num_episodes} episodes.")
 
 def main():
-    num_episodes = 300  # Set the number of training episodes
+    num_episodes = 300  # Total number of training episodes
     configuration_file = "models/1/glue_configuration.yaml"
     test_duration_seconds = 300  # Duration per simulation
+    random_flag = True  # Set to True or False as needed
 
-    # Initialize variables to track performance
-    scores = []
-    best_score = float('inf')  # Initialize best_score to infinity since lower is better
+    # Determine the number of CPU cores
+    num_cores = multiprocessing.cpu_count()
+    logging.info(f"Number of CPU cores available: {num_cores}")
 
-    # Temporary run to determine state and action sizes
-    temp_p, temp_input_queue, temp_output_queue, temp_error_queue, temp_actions = run_simulation(configuration_file, test_duration_seconds)
+    # Determine the number of episodes per worker
+    episodes_per_worker = num_episodes // num_cores
+    remaining_episodes = num_episodes % num_cores
+
+    # Create a directory to save improved models
+    model_save_dir = "improved_models"
+    os.makedirs(model_save_dir, exist_ok=True)
+
+    # Perform a temporary run to determine state_size and action_size
+    logging.info("Performing a temporary simulation run to determine state and action sizes...")
+    temp_p, temp_input_queue, temp_output_queue, temp_error_queue = run_simulation(configuration_file, test_duration_seconds, random_flag)
     sleep(0.2)
     try:
-        temp_state = temp_output_queue.get(timeout=5)
-    except:
-        logging.error("Failed to retrieve initial state. Exiting.")
+        temp_state = temp_output_queue.get(timeout=10)
+    except Exception as e:
+        logging.error(f"Failed to retrieve initial state: {e}. Exiting.")
+        temp_p.terminate()
+        temp_p.join()
+        return
+
+    if not hasattr(temp_state, 'signals') or not hasattr(temp_state, 'allowed_green_signal_combinations') or not hasattr(temp_state, 'total_score'):
+        logging.error("Initial state is missing required attributes. Exiting.")
         temp_p.terminate()
         temp_p.join()
         return
 
     signal_names = [signal.name for signal in temp_state.signals]
     allowed_configurations = generate_allowed_configurations(temp_state.allowed_green_signal_combinations)
-    state_size = len(signal_names) * 3 + len(temp_state.signals) + 1  # Adjust based on EnhancedState
+    state_size = len(signal_names) * 3 + len(temp_state.signals) + 1  # Example size calculation
     action_size = len(allowed_configurations)
 
-    # Initialize RL agent
-    agent = RLAgent(state_size, action_size)
-    logging.info(f"Initialized RLAgent with state size {state_size} and action size {action_size}")
+    logging.info(f"Determined state_size: {state_size}, action_size: {action_size}")
+
+    # Initialize RLAgent for temporary run
+    temp_agent = RLAgent(state_size, action_size)
 
     temp_p.terminate()
     temp_p.join()
 
-    # Create a directory to save improved models
-    model_save_dir = "improved_models"
-    os.makedirs(model_save_dir, exist_ok=True)
+    # Create and start worker processes
+    workers = []
+    for i in range(num_cores):
+        # Distribute remaining episodes among the first few workers
+        assigned_episodes = episodes_per_worker + (1 if i < remaining_episodes else 0)
+        if assigned_episodes == 0:
+            continue  # Skip if no episodes are assigned
 
-    for episode in range(1, num_episodes + 1):
-        logging.info(f"Starting Episode {episode}/{num_episodes}")
-        score = run_episode(agent, configuration_file, test_duration_seconds, random=True)
-        if score is not None:
-            scores.append(score)
-            logging.info(f"Episode {episode} Score: {score}")
+        worker = Process(
+            target=worker_main,
+            args=(
+                i + 1,  # Worker ID starting from 1
+                assigned_episodes,
+                configuration_file,
+                test_duration_seconds,
+                random_flag,
+                model_save_dir,
+                state_size,
+                action_size
+            )
+        )
+        workers.append(worker)
+        worker.start()
+        logging.info(f"Started Worker {i + 1} with {assigned_episodes} episodes.")
 
-            # Check if current score is better than best_score
-            if score < best_score:
-                best_score = score
-                logging.info(f"New best score achieved: {best_score}. Saving model...")
+    # Wait for all workers to finish
+    for worker in workers:
+        worker.join()
+        logging.info(f"Worker {worker.pid} has finished.")
 
-                # Define filenames with episode number and timestamp
-                timestamp = time()
-                q_table_filename = os.path.join(model_save_dir, f'q_table_episode_{episode}_{int(timestamp)}.pkl')
-                agent_params_filename = os.path.join(model_save_dir, f'agent_parameters_episode_{episode}_{int(timestamp)}.pkl')
+    logging.info("All workers have completed their episodes.")
 
-                # Save the trained Q-table
-                with open(q_table_filename, 'wb') as f:
-                    pickle.dump(dict(agent.q_table), f)
-                logging.info(f"Q-table saved to '{q_table_filename}'.")
-
-                # Save additional agent parameters if needed
-                agent_parameters = {
-                    'state_size': agent.state_size,
-                    'action_size': agent.action_size,
-                    'alpha': agent.alpha,
-                    'gamma': agent.gamma,
-                    'epsilon': agent.epsilon,
-                    'epsilon_min': agent.epsilon_min,
-                    'epsilon_decay': agent.epsilon_decay
-                }
-                with open(agent_params_filename, 'wb') as f:
-                    pickle.dump(agent_parameters, f)
-                logging.info(f"Agent parameters saved to '{agent_params_filename}'.")
-        else:
-            logging.warning(f"Episode {episode} failed to complete.")
-
-    # Save the final Q-table and agent parameters after all episodes
-    final_q_table_filename = 'final_q_table.pkl'
-    final_agent_params_filename = 'final_agent_parameters.pkl'
-
-    with open(final_q_table_filename, 'wb') as f:
-        pickle.dump(dict(agent.q_table), f)
-    logging.info(f"Final Q-table saved to '{final_q_table_filename}'.")
-
-    agent_parameters = {
-        'state_size': agent.state_size,
-        'action_size': agent.action_size,
-        'alpha': agent.alpha,
-        'gamma': agent.gamma,
-        'epsilon': agent.epsilon,
-        'epsilon_min': agent.epsilon_min,
-        'epsilon_decay': agent.epsilon_decay
-    }
-    with open(final_agent_params_filename, 'wb') as f:
-        pickle.dump(agent_parameters, f)
-    logging.info(f"Final agent parameters saved to '{final_agent_params_filename}'.")
-
-    # Optionally, log average score
-    average_score = np.mean(scores) if scores else 0
-    logging.info(f"Average Score over {num_episodes} episodes: {average_score}")
+    # Optionally, aggregate results here
+    # For example, find the best Q-table among all saved models
+    # This part can be customized based on specific needs
 
 if __name__ == '__main__':
     main()
-
-
