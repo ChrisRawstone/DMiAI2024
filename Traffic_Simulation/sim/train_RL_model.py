@@ -322,7 +322,7 @@ def worker_main(worker_id, num_episodes, configuration_file, test_duration_secon
     logger.info(f"Worker {worker_id} completed all {num_episodes} episodes.")
 
 def main():
-    num_episodes = 300  # Total number of training episodes
+    num_episodes = 3000  # Total number of training episodes
     configuration_file = "models/1/glue_configuration.yaml"
     test_duration_seconds = 300  # Duration per simulation
     random_flag = True  # Set to True or False as needed

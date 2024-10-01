@@ -294,8 +294,8 @@ def main():
     args = parser.parse_args()
 
 
-    q_table = "improved_models/q_table_worker_10_episode_7_score_18077.872429468152_1727805094.pkl"
-    agent_params = "improved_models/agent_parameters_worker_10_episode_7_score_18077.872429468152_1727805094.pkl"
+    q_table = "improved_models/q_table_worker_9_episode_135_score_1640.0_1727806744.pkl"
+    agent_params = "improved_models/agent_parameters_worker_9_episode_135_score_1640.0_1727806744.pkl"
 
     # Validate file paths
     if not os.path.isfile(q_table):
