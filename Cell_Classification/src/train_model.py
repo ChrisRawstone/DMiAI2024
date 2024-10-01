@@ -405,7 +405,7 @@ def objective(trial):
     # ---------------------------
     model_name = trial.suggest_categorical(
         'model_name',
-        ['ViT16', 'ResNet50', "ResNet18", 'EfficientNet', 'MobileNetV3', 
+        ['ViT16', 'ResNet50', "ResNet18", 'EfficientNetB0', 'MobileNetV3',  "EfficientNetB4",
          "ResNet101", "ViT32", 'DenseNet121']
     )
 
@@ -423,8 +423,9 @@ def objective(trial):
     gamma = trial.suggest_float('gamma', 1.0, 3.0)
     alpha = trial.suggest_float('alpha', 0.1, 0.9)
 
-    num_epochs = 50  # Total number of epochs
+    num_epochs = 1  # Total number of epochs
     patience = 10    # Early stopping patience
+    
 
     # ---------------------------
     # 2. Initialize wandb Run
@@ -442,11 +443,16 @@ def objective(trial):
     }
 
     wandb.init(
-        project='your_project_name',  # Replace with your wandb project name
+        project='Cell_Classification',  # Replace with your wandb project name
         config=wandb_config,
         reinit=True,  # Allows multiple wandb runs in the same script
         name=f"trial_{trial.number}"
     )
+
+    # running model with this configuration
+    logging.info("###############################################")
+    logging.info(f"Running model: {model_name} with Image Size: {img_size}, Batch Size: {batch_size}, LR: {lr}, Weight Decay: {weight_decay}, Gamma: {gamma}, Alpha: {alpha}")
+    logging.info("###############################################")
 
     # ---------------------------
     # 3. Model and Data Setup
