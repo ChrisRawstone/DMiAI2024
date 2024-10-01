@@ -13,9 +13,10 @@ training_params:
   train_size: 0.8
   loss_functions: ['l1', 'perceptual'] # you can remove 'perceptual' if you don't want to use it
   perceptual_loss_weight: 0.01
-  vgg_layers: [2, 7, 12, 21, 30]
+  vgg_layers: [2, 7, 30] # must be some of [0, 2, 5, 7, 10, 12, 14, 16, 19, 21, 23, 25, 28, 30, 32, 34]
   augmentations: [] # could be ['flipMaskAug']
   crop_mask: True # if true we only provide the part of the mask that overlaps with the tissue
+  only_score_within_mask: True # if true we only score the pixels that are within the mask
 
 hydra:
   run:

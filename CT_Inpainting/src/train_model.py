@@ -19,6 +19,16 @@ from omegaconf import DictConfig, OmegaConf
 import hydra
 
 
+def area_to_fill_mask(mask, tissue):
+    """
+    This function takes in a mask and tissue image and returns the area to fill in the mask
+    """
+    # check that the mask only contrains 0 and 1
+    assert torch.all((mask == 0) | (mask == 1)), "Mask must only contain 0 and 1"
+    fill_mask = torch.where(tissue > 0, mask, torch.zeros_like(mask))
+    return fill_mask
+
+
 @hydra.main(version_base=None, config_path="model_config", config_name="base_config")
 def train(cfg: DictConfig):
 
@@ -36,6 +46,8 @@ def train(cfg: DictConfig):
     train_size_proportion = cfg.training_params.train_size
     augmentations_list = cfg.training_params.augmentations
     crop_mask = cfg.training_params.crop_mask
+    only_score_within_mask = cfg.training_params.only_score_within_mask
+    clamp_output = cfg.training_params.clamp_output
     if augmentations_list is not None:
         augmentations = []
         for aug in augmentations_list:
@@ -143,15 +155,39 @@ def train(cfg: DictConfig):
 
                 optimizer.zero_grad()
                 outputs = model(inputs)
-
-                #calculate perceptual loss
-
+                if clamp_output:
+                    outputs = torch.clamp(outputs, 0, 1)
+           
+                # Calculate loss
                 l1_loss = base_criterion(outputs, labels)
-                if "perceptual" in cfg.training_params.loss_functions:
-                    # fix outputs such that it has 3 channels and can be used in perceptual loss
-                    outputs_for_perceptual_loss = torch.cat([outputs, outputs, outputs], dim=1)
-                    # same for labels
-                    labels_for_perceptual_loss = torch.cat([labels, labels, labels], dim=1)                    
+                if "perceptual" in cfg.training_params.loss_functions:   
+                    if only_score_within_mask:                        
+                        # only score within the mask
+                        mask = inputs[:, 1, :, :].unsqueeze(1) # important to unsqueeze to get the right shape 
+                        # now only score within the mask
+                        area_to_fill =area_to_fill_mask(mask, labels)
+                        outputs = torch.where(area_to_fill > 0, outputs, torch.zeros_like(outputs))
+
+                        labels = torch.where(area_to_fill > 0, labels, torch.zeros_like(labels))
+                        # plot and save to make sure it is working
+                        out_for_viz = outputs[0, 0].cpu().detach().numpy()
+                        lab_for_viz = labels[0, 0].cpu().detach().numpy()
+                        fig, axs = plt.subplots(1, 2, figsize=(15, 5))
+                        axs[0].imshow(out_for_viz, cmap='gray')
+                        axs[0].set_title('predicted filling')
+                        axs[0].axis('off')
+                        axs[1].imshow(lab_for_viz, cmap='gray')
+                        axs[1].set_title('ground truth of area to fill')
+                        axs[1].axis('off')
+                        plt.tight_layout()
+                        plt.savefig(f'{output_dir}/epoch_{epoch+1}_only_score_within_mask.png')
+
+                    # turn into 3 channels for perceptual loss since it expects 3 channels RGB             
+
+                    outputs_for_perceptual_loss = torch.cat([outputs, outputs, outputs], dim=1)                    
+                    labels_for_perceptual_loss = torch.cat([labels, labels, labels], dim=1)                      
+
+                    # calculate perceptual loss                       
                     perceptual_loss = perceptual_loss_fn(outputs_for_perceptual_loss, labels_for_perceptual_loss)
                     # combine the two losses
                     total_loss = l1_loss + perceptual_loss_weight * perceptual_loss
@@ -192,6 +228,8 @@ def train(cfg: DictConfig):
 
                     # Perform reconstruction
                     outputs = model(inputs)
+                    if clamp_output:
+                        outputs = torch.clamp(outputs, 0, 1)
 
                     # Calculate loss
                     loss = base_criterion(outputs, labels)

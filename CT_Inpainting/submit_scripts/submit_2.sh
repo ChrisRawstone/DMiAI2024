@@ -39,4 +39,4 @@
 module load cuda/11.1
 source CT_Inpainting/CT_venv/bin/activate
 
-python CT_Inpainting/src/train_model.py --config-name test_1
+python CT_Inpainting/src/train_model.py --config-name test_2
