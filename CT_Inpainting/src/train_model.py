@@ -62,7 +62,7 @@ def train(cfg: DictConfig):
         if cfg.training_params.unet_2:
             # overwrite import of model
             print("Using UNet version 2")
-            from CT_Inpainting.src.models.model_2 import UNet
+            from src.models.model_2 import UNet
             print("Using UNet version 2")
             model = UNet().to(device)
         else:
