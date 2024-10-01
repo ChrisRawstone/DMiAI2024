@@ -2,10 +2,37 @@ import torch.nn as nn
 import torch
 import torchvision.models
 
-# Define the U-Net model
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+class SelfAttention(nn.Module):
+    def __init__(self, in_dim):
+        super(SelfAttention, self).__init__()
+        self.query_conv = nn.Conv2d(in_dim, in_dim // 8, 1)
+        self.key_conv = nn.Conv2d(in_dim, in_dim // 8, 1)
+        self.value_conv = nn.Conv2d(in_dim, in_dim, 1)
+        self.gamma = nn.Parameter(torch.zeros(1))
+
+    def forward(self, x):
+        batch_size, C, width, height = x.size()
+        query = self.query_conv(x).view(batch_size, -1, width * height).permute(0, 2, 1)
+        key = self.key_conv(x).view(batch_size, -1, width * height)
+        attention = torch.bmm(query, key)
+        attention = F.softmax(attention, dim=-1)
+
+        value = self.value_conv(x).view(batch_size, -1, width * height)
+        out = torch.bmm(value, attention.permute(0, 2, 1))
+        out = out.view(batch_size, C, width, height)
+
+        out = self.gamma * out + x
+        return out
+
 class UNet(nn.Module):
-    def __init__(self, in_channels=4, out_channels=1):
+    def __init__(self, in_channels=4, out_channels=1, use_attention=False):
         super(UNet, self).__init__()
+        self.use_attention = use_attention
+
         # Encoder
         self.enc_conv0 = self.conv_block(in_channels, 64)
         self.pool0 = nn.MaxPool2d(kernel_size=2)
@@ -20,6 +47,10 @@ class UNet(nn.Module):
         self.pool3 = nn.MaxPool2d(kernel_size=2)
 
         self.enc_conv4 = self.conv_block(512, 1024)
+
+        # Self-Attention layer for the bottleneck
+        if self.use_attention:
+            self.self_attention = SelfAttention(1024)
 
         # Decoder
         self.upconv3 = nn.ConvTranspose2d(1024, 512, kernel_size=2, stride=2)
@@ -62,6 +93,10 @@ class UNet(nn.Module):
         enc3_pool = self.pool3(enc3)
 
         bottleneck = self.enc_conv4(enc3_pool)
+
+        # Apply self-attention in the bottleneck if specified
+        if self.use_attention:
+            bottleneck = self.self_attention(bottleneck)
 
         # Decoder
         dec3 = self.upconv3(bottleneck)
