@@ -468,7 +468,7 @@ class TrafficSimulationEnvHandler():
             self._run_one_tick()
 
         while True:
-            logger.info(f'Traffic simulation - tick {self.simulation_ticks}....')
+            # logger.info(f'Traffic simulation - tick {self.simulation_ticks}....')
             
             if self.simulation_ticks < (self._test_duration_seconds + self.warm_up_ticks):
                 self._run_one_tick()
