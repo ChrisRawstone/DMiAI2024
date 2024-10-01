@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 from src.utils import l1_score, plot_prediction, load_sample
 from src.models.model import UNet  # Assuming you have the UNet model in src.models.model
-from src.train_model import CTInpaintingDataset  # Import the dataset class from train.py
+#from src.train_model import CTInpaintingDataset  # Import the dataset class from train.py
 from torchvision import transforms
 
 # Set the device (CPU or GPU)
@@ -62,9 +62,13 @@ def predict(corrupted_image: np.ndarray,
     model.eval()  # Set model to evaluation mode
     with torch.no_grad():
         output_tensor = model(input_tensor[None, ...])  # Get the model output
+    
+    # lets try clamping the output tensor
+    output_tensor = torch.clamp(output_tensor, 0, 1)
 
     reconstructed_np = output_tensor[0, 0].detach().cpu().numpy() 
-    reconstructed_image = (reconstructed_np - np.min(reconstructed_np)) / (np.max(reconstructed_np) - np.min(reconstructed_np)) * 255.0
+    reconstructed_image = reconstructed_np * 255.0
+    #reconstructed_image = (reconstructed_np - np.min(reconstructed_np)) / (np.max(reconstructed_np) - np.min(reconstructed_np)) * 255.0
 
     return reconstructed_image
 
