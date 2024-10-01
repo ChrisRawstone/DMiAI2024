@@ -1,4 +1,4 @@
-debug: False
+debug: True
 
 wandb:
   project: CT_Inpainting
@@ -17,11 +17,10 @@ training_params:
   augmentations: [] # could be ['flipMaskAug']
   crop_mask: True # if true we only provide the part of the mask that overlaps with the tissue
   only_score_within_mask: True # if true we only score the pixels that are within the mask
-  clamp_output: True # if true we clamp the output to [0, 1]
 
 hydra:
   run:
-    dir: CT_Inpainting/models/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    dir: CT_Inpainting/models/debug/${now:%Y-%m-%d}/${now:%H-%M-%S}
 
 
 
