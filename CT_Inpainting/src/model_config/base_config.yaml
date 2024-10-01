@@ -15,6 +15,7 @@ training_params:
   perceptual_loss_weight: 0.01
   vgg_layers: [2, 7, 12, 21, 30]
   augmentations: [] # could be ['flipMaskAug']
+  crop_mask: True # if true we only provide the part of the mask that overlaps with the tissue
 
 hydra:
   run:

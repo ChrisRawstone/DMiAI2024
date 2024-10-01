@@ -18,13 +18,15 @@ import shutil
 
 #base class for both classifier and inpainting
 class BaseClass(Dataset):
-    def __init__(self, data_dir, transform=None, dirs= ['corrupted', 'mask', 'tissue', 'vertebrae', 'ct'], desired_input = ['corrupted', 'mask', 'tissue', 'vertebrae'], desired_output = ['ct']):
+    def __init__(self, data_dir, transform=None, dirs= ['corrupted', 'mask', 'tissue', 'vertebrae', 'ct'], desired_input = ['corrupted', 'mask', 'tissue', 'vertebrae'], desired_output = ['ct'],crop_mask=False):
         if transform is None:
             assert False, "Transform is required"
         self.data_dir = data_dir
         self.dirs = dirs
         for dir in self.dirs:
             setattr(self, dir + '_dir', os.path.join(data_dir, dir))
+        
+        self.crop_mask = crop_mask
 
         self.desired_input = desired_input
         self.desired_output = desired_output
@@ -66,9 +68,12 @@ class BaseClass(Dataset):
             random_key = list(tensors.keys())[0]
             tensors['vertebrae'] = torch.full((1, tensors[random_key].shape[1], tensors[random_key].shape[2]), vertebrae_normalized)
         
-       
-        else:
-            assert False, "Transform is required"
+        if self.crop_mask:
+            # dont input the mask thats outside the tissue
+            mask = tensors['mask']
+            tissue = tensors['tissue']
+            new_mask = torch.where(tissue > 0, mask, torch.zeros_like(mask))
+            tensors['mask'] = new_mask           
 
         # Combine inputs into a single tensor based on desired input
         input_tensor = torch.cat([tensors[key] for key in self.desired_input], dim=0) # Shape: [len(desired_input
@@ -177,8 +182,8 @@ class BaseClass(Dataset):
         print(f"Data split and saved in {hydra_output_dir}")
 
         # Create new instances of the BaseClass class with the split data
-        train_dataset = BaseClass(train_data_dir, transform=self.transform, dirs=self.dirs, desired_input=self.desired_input, desired_output=self.desired_output)
-        val_dataset = BaseClass(val_data_dir, transform=self.transform, dirs=self.dirs, desired_input=self.desired_input, desired_output=self.desired_output)
+        train_dataset = BaseClass(train_data_dir, transform=self.transform, dirs=self.dirs, desired_input=self.desired_input, desired_output=self.desired_output, crop_mask=self.crop_mask)
+        val_dataset = BaseClass(val_data_dir, transform=self.transform, dirs=self.dirs, desired_input=self.desired_input, desired_output=self.desired_output, crop_mask=self.crop_mask)
 
         return train_dataset, val_dataset
 

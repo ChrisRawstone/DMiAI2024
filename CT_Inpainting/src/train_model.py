@@ -35,6 +35,7 @@ def train(cfg: DictConfig):
     perceptual_loss_weight = cfg.training_params.perceptual_loss_weight
     train_size_proportion = cfg.training_params.train_size
     augmentations_list = cfg.training_params.augmentations
+    crop_mask = cfg.training_params.crop_mask
     if augmentations_list is not None:
         augmentations = []
         for aug in augmentations_list:
@@ -102,7 +103,7 @@ def train(cfg: DictConfig):
     ])
 
     # Prepare the dataset and dataloaders
-    dataset = BaseClass(data_dir=data_dir, transform=transform)
+    dataset = BaseClass(data_dir=data_dir, transform=transform, crop_mask=crop_mask)
 
 
     # Split dataset into training and validation sets
@@ -111,13 +112,9 @@ def train(cfg: DictConfig):
     
 
     # split the dataset into training and validation sets usng our custom split_data method if augmentations
-    if augmentations is not None:
-        train_dataset,val_dataset =dataset.split_data(output_dir, train_size=train_size_proportion, val_size=1-train_size_proportion, seed=seed, augmentations=augmentations)
-    else:
-        # just use the torch split method       
-        # set seed for reproducibility when splitting the dataset
-        torch.manual_seed(seed)
-        train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
+    
+    train_dataset,val_dataset =dataset.split_data(output_dir, train_size=train_size_proportion, val_size=1-train_size_proportion, seed=seed, augmentations=augmentations)
+    
     
     # if true, use small dataset for testing/debug
     if debug:
