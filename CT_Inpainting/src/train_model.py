@@ -56,12 +56,21 @@ def train(cfg: DictConfig):
     else:
         use_attention = False
 
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
     if "unet_2" in cfg.training_params:
         if cfg.training_params.unet_2:
             # overwrite import of model
-            from src.models.model import UNet_ver_2 as UNet    
+            print("Using UNet version 2")
+            from CT_Inpainting.src.models.model_2 import UNet
+            print("Using UNet version 2")
+            model = UNet().to(device)
+        else:
+            from src.models.model import UNet
+            model = UNet(use_attention=use_attention).to(device)
     else:
         from src.models.model import UNet
+        model = UNet(use_attention=use_attention).to(device)
 
     augmentations = []
     if augmentations_list:        
@@ -76,10 +85,6 @@ def train(cfg: DictConfig):
     # Set the seed for reproducibility
     torch.manual_seed(seed)
     np.random.seed(seed)
-    # Initialize the model, loss function, and optimizer
-        # Set the device
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model = UNet(use_attention=use_attention).to(device)
 
     assert cfg.training_params.loss_functions[0] == "l1", "First loss function must be L1"
     base_criterion = nn.L1Loss()
