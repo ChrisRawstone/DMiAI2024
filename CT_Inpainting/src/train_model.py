@@ -48,7 +48,7 @@ def train(cfg: DictConfig):
     crop_mask = cfg.training_params.crop_mask
     only_score_within_mask = cfg.training_params.only_score_within_mask
     clamp_output = cfg.training_params.clamp_output
-    if augmentations_list is not None:
+    if augmentations_list:
         augmentations = []
         for aug in augmentations_list:
             if aug == "flipMaskAug":
