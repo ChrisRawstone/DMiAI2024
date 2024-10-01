@@ -10,15 +10,16 @@ training_params:
   learning_rate: 0.0001
   batch_size: 4
   data_dir: 'CT_Inpainting/data'
-  train_size: 0.99
+  train_size: 0.8
   loss_functions: ['l1'] # you can remove 'perceptual' if you don't want to use it
   perceptual_loss_weight: 0.01
   vgg_layers: [2, 7, 30] # must be some of [0, 2, 5, 7, 10, 12, 14, 16, 19, 21, 23, 25, 28, 30, 32, 34]
-  augmentations: ['flipMaskAug'] # could be ['flipMaskAug']
+  augmentations: [] # could be ['flipMaskAug']
   crop_mask: True # if true we only provide the part of the mask that overlaps with the tissue
   only_score_within_mask: False # if true we only score the pixels that are within the mask
   clamp_output: True # if true we clamp the output to [0, 1]
   use_scheduler: False # if true we use a scheduler
+  use_attention: True
 
 hydra:
   run:

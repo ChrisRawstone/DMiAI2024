@@ -50,13 +50,20 @@ def train(cfg: DictConfig):
     only_score_within_mask = cfg.training_params.only_score_within_mask
     clamp_output = cfg.training_params.clamp_output
     use_scheduler = cfg.training_params.use_scheduler
-    if augmentations_list:
-        augmentations = []
+    # check if training_params.use_attention is in the config
+    if "use_attention" in cfg.training_params:
+        use_attention = cfg.training_params.use_attention
+    else:
+        use_attention = False
+    augmentations = []
+    if augmentations_list:        
         for aug in augmentations_list:
             if aug == "flipMaskAug":
                 augmentations.append(flipMaskAug())
             else:
                 raise ValueError(f"Unknown augmentation {aug}")
+    
+
             
     # Set the seed for reproducibility
     torch.manual_seed(seed)
@@ -64,7 +71,7 @@ def train(cfg: DictConfig):
     # Initialize the model, loss function, and optimizer
         # Set the device
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model = UNet().to(device)
+    model = UNet(use_attention=use_attention).to(device)
 
     assert cfg.training_params.loss_functions[0] == "l1", "First loss function must be L1"
     base_criterion = nn.L1Loss()

@@ -17,7 +17,7 @@ training_params:
   augmentations: [] # could be ['flipMaskAug']
   crop_mask: True # if true we only provide the part of the mask that overlaps with the tissue
   only_score_within_mask: True # if true we only score the pixels that are within the mask
-  use_sheduler: False # if true we use a scheduler
+  use_scheduler: False # if true we use a scheduler
 
 hydra:
   run:

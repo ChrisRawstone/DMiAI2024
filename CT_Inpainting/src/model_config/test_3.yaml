@@ -18,7 +18,7 @@ training_params:
   crop_mask: True # if true we only provide the part of the mask that overlaps with the tissue
   only_score_within_mask: False # if true we only score the pixels that are within the mask
   clamp_output: True # if true we clamp the output to [0, 1]
-  use_sheduler: True # if true we use a scheduler
+  use_scheduler: True # if true we use a scheduler
 
 hydra:
   run:
