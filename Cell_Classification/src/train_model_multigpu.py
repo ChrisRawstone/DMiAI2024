@@ -12,7 +12,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
 from torchvision import transforms, models
-from torchvision.models import ViT_B_32_Weights, ResNet18_Weights, ViT_B_16_Weights, ResNet50_Weights, ResNet101_Weights, EfficientNet_B0_Weights, EfficientNet_B4_Weights, MobileNet_V3_Large_Weights
+from torchvision.models import ViT_B_16_Weights
 from data.make_dataset import LoadTifDataset
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
@@ -95,18 +95,18 @@ def get_dataloaders(batch_size, img_size):
         A.HorizontalFlip(p=0.5),
         A.VerticalFlip(p=0.5),
         A.Rotate(limit=30, p=0.5),
-        # A.RandomBrightnessContrast(p=0.5),
-        # A.RandomGamma(p=0.5),
+        A.RandomBrightnessContrast(p=0.5),
+        A.RandomGamma(p=0.5),
         A.GaussianBlur(blur_limit=3, p=0.3),
-        A.Normalize(mean=(0.485, 0.485, 0.485),  # Using ImageNet means  alternative : A.Normalize(mean=(0.485, 0.456, 0.406), 
-                    std=(0.229, 0.229, 0.229)),   # Using ImageNet stds  alternative : std=(0.229, 0.224, 0.225)),
+        A.Normalize(mean=(0.485, 0.456, 0.406),  # Using ImageNet means
+                    std=(0.229, 0.224, 0.225)),   # Using ImageNet stds
         ToTensorV2(),
     ])
 
     val_transform = A.Compose([
         A.Resize(img_size, img_size),
-        A.Normalize(mean=(0.485, 0.485, 0.485),  # Using ImageNet means
-                    std=(0.229, 0.229, 0.229)),   # Using ImageNet stds
+        A.Normalize(mean=(0.485, 0.456, 0.406),  # Using ImageNet means
+                    std=(0.229, 0.224, 0.225)),   # Using ImageNet stds
         ToTensorV2(),
     ])
 
@@ -205,117 +205,32 @@ def get_models(num_classes=1):
     """
     models_dict = {}
 
-    # Vision Transformer16
+    # Vision Transformer
     vit_weights = ViT_B_16_Weights.DEFAULT
     vit_model = models.vit_b_16(weights=vit_weights)
     in_features = vit_model.heads.head.in_features
     vit_model.heads.head = nn.Linear(in_features, num_classes)
-    models_dict['ViT16'] = vit_model
-    
-    # # Vision Transformer16
-    # vit_weights_h14 = ViT_H_14_Weights.DEFAULT
-    # vit_model14 = models.vit_h_14(weights=vit_weights_h14)
-    # in_features = vit_model14.heads.head.in_features
-    # vit_model14.heads.head = nn.Linear(in_features, num_classes)
-    # models_dict['ViTh14'] = vit_model14
-    
-    # Vision Transformer32
-    vit_weights32 = ViT_B_32_Weights.DEFAULT
-    vit_model32 = models.vit_b_32(weights=vit_weights32)
-    in_features = vit_model32.heads.head.in_features
-    vit_model32.heads.head = nn.Linear(in_features, num_classes)
-    models_dict['ViT32'] = vit_model32
-
-    # ResNet18
-    resnet18_weights = ResNet18_Weights.DEFAULT
-    resnet18_model = models.resnet18(weights=resnet18_weights)
-    in_features = resnet18_model.fc.in_features
-    resnet18_model.fc = nn.Linear(in_features, num_classes)
-    models_dict['ResNet18'] = resnet18_model
+    models_dict['ViT'] = vit_model
 
     # ResNet50
-    resnet50_weights = ResNet50_Weights.DEFAULT
-    resnet50_model = models.resnet50(weights=resnet50_weights)
-    in_features = resnet50_model.fc.in_features
-    resnet50_model.fc = nn.Linear(in_features, num_classes)
-    models_dict['ResNet50'] = resnet50_model
+    resnet_model = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
+    in_features = resnet_model.fc.in_features
+    resnet_model.fc = nn.Linear(in_features, num_classes)
+    models_dict['ResNet50'] = resnet_model
 
-    # ResNet101
-    resnet101_weights = ResNet101_Weights.DEFAULT
-    resnet101_model = models.resnet101(weights=resnet101_weights)
-    in_features = resnet101_model.fc.in_features
-    resnet101_model.fc = nn.Linear(in_features, num_classes)
-    models_dict['ResNet101'] = resnet101_model
+    # EfficientNet
+    efficientnet_model = models.efficientnet_b0(weights=models.EfficientNet_B0_Weights.DEFAULT)
+    in_features = efficientnet_model.classifier[1].in_features
+    efficientnet_model.classifier[1] = nn.Linear(in_features, num_classes)
+    models_dict['EfficientNet'] = efficientnet_model
 
-    # EfficientNetB0
-    efficientnet_b0_weights = EfficientNet_B0_Weights.DEFAULT
-    efficientnet_b0_model = models.efficientnet_b0(weights=efficientnet_b0_weights)
-    in_features = efficientnet_b0_model.classifier[1].in_features
-    efficientnet_b0_model.classifier[1] = nn.Linear(in_features, num_classes)
-    models_dict['EfficientNetB0'] = efficientnet_b0_model
-
-    # EfficientNetB4
-    efficientnet_b4_weights = EfficientNet_B4_Weights.DEFAULT
-    efficientnet_b4_model = models.efficientnet_b4(weights=efficientnet_b4_weights)
-    in_features = efficientnet_b4_model.classifier[1].in_features
-    efficientnet_b4_model.classifier[1] = nn.Linear(in_features, num_classes)
-    models_dict['EfficientNetB4'] = efficientnet_b4_model
-
-    # MobileNetV3 Large
-    mobilenet_v3_weights = MobileNet_V3_Large_Weights.DEFAULT
-    mobilenet_v3_model = models.mobilenet_v3_large(weights=mobilenet_v3_weights)
-    in_features = mobilenet_v3_model.classifier[3].in_features
-    mobilenet_v3_model.classifier[3] = nn.Linear(in_features, num_classes)
-    models_dict['MobileNetV3'] = mobilenet_v3_model
-
-    # DenseNet121
-    densenet_weights = models.DenseNet121_Weights.DEFAULT
-    densenet_model = models.densenet121(weights=densenet_weights)
-    in_features = densenet_model.classifier.in_features
-    densenet_model.classifier = nn.Linear(in_features, num_classes)
-    models_dict['DenseNet121'] = densenet_model
+    # MobileNetV3
+    mobilenet_model = models.mobilenet_v3_large(weights=models.MobileNet_V3_Large_Weights.DEFAULT)
+    in_features = mobilenet_model.classifier[3].in_features
+    mobilenet_model.classifier[3] = nn.Linear(in_features, num_classes)
+    models_dict['MobileNetV3'] = mobilenet_model
 
     return models_dict
-
-
-# def get_models(num_classes=1):
-#     """
-#     Returns a dictionary of state-of-the-art models.
-
-#     Args:
-#         num_classes (int, optional): Number of output classes. Defaults to 1.
-
-#     Returns:
-#         dict: Dictionary of models.
-#     """
-#     models_dict = {}
-
-#     # Vision Transformer
-#     vit_weights = ViT_B_16_Weights.DEFAULT
-#     vit_model = models.vit_b_16(weights=vit_weights)
-#     in_features = vit_model.heads.head.in_features
-#     vit_model.heads.head = nn.Linear(in_features, num_classes)
-#     models_dict['ViT'] = vit_model
-
-#     # ResNet50
-#     resnet_model = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
-#     in_features = resnet_model.fc.in_features
-#     resnet_model.fc = nn.Linear(in_features, num_classes)
-#     models_dict['ResNet50'] = resnet_model
-
-#     # EfficientNet
-#     efficientnet_model = models.efficientnet_b0(weights=models.EfficientNet_B0_Weights.DEFAULT)
-#     in_features = efficientnet_model.classifier[1].in_features
-#     efficientnet_model.classifier[1] = nn.Linear(in_features, num_classes)
-#     models_dict['EfficientNet'] = efficientnet_model
-
-#     # MobileNetV3
-#     mobilenet_model = models.mobilenet_v3_large(weights=models.MobileNet_V3_Large_Weights.DEFAULT)
-#     in_features = mobilenet_model.classifier[3].in_features
-#     mobilenet_model.classifier[3] = nn.Linear(in_features, num_classes)
-#     models_dict['MobileNetV3'] = mobilenet_model
-
-#     return models_dict
 
 # ===============================
 # 10. Define Focal Loss with Class Weights
@@ -383,9 +298,6 @@ def get_model_parallel(model):
         logging.info("Using a single GPU.")
     return model
 
-global best_custom_score
-best_custom_score = 0
-
 def objective(trial):
     """
     Objective function for Optuna hyperparameter optimization.
@@ -396,22 +308,21 @@ def objective(trial):
     Returns:
         float: Validation custom score to maximize.
     """
-    global best_custom_score
     # Hyperparameters to tune
-    model_name = trial.suggest_categorical('model_name', ['ViT16', 'ResNet50', 'EfficientNet', 'MobileNetV3', "ResNet101", "ViT32", 'DenseNet121'])
+    model_name = trial.suggest_categorical('model_name', ['ViT', 'ResNet50', 'EfficientNet', 'MobileNetV3'])
 
-    if (model_name == 'ViT16' or model_name == "ViT32"):
+    if model_name == 'ViT':
         img_size = 224  # Fixed for ViT
     else:
-        img_size = trial.suggest_categorical('img_size', [128, 224, 256, 299, 331, 350, 400, 500])
+        img_size = trial.suggest_categorical('img_size', [224, 256, 299])
 
-    batch_size = trial.suggest_categorical('batch_size', [4, 8, 16, 32])
-    lr = trial.suggest_float('lr', 1e-6, 1e-2, log=True)
+    batch_size = trial.suggest_categorical('batch_size', [16, 32, 64, 128])
+    lr = trial.suggest_float('lr', 1e-6, 1e-3, log=True)
     weight_decay = trial.suggest_float('weight_decay', 1e-6, 1e-2, log=True)
     gamma = trial.suggest_float('gamma', 1.0, 3.0)
     alpha = trial.suggest_float('alpha', 0.1, 0.9)
 
-    num_epochs = 100  # For quick experimentation; increase for better results
+    num_epochs = 20  # For quick experimentation; increase for better results
 
     # Get model
     models_dict = get_models()
@@ -432,10 +343,9 @@ def objective(trial):
     # Mixed Precision Scaler
     scaler = torch.amp.GradScaler("cuda")  # Updated to use torch.cuda.amp
 
+    best_custom_score = 0
 
     for epoch in range(num_epochs):
-        logging.info(f"Epoch {epoch+1}/{num_epochs}")
-
         model.train()
         train_loss = 0
         train_preds = []
@@ -520,7 +430,7 @@ def objective(trial):
             }
             with open('checkpoints/model_info_optuna.json', 'w') as f:
                 json.dump(model_info_optuna, f, indent=4)
-            # logging.info("Optuna best model architecture and hyperparameters saved to 'checkpoints/model_info_optuna.json'.")
+            logging.info("Optuna best model architecture and hyperparameters saved to 'checkpoints/model_info_optuna.json'.")
 
         # Report intermediate objective value
         trial.report(custom_score, epoch)
@@ -541,7 +451,7 @@ def objective(trial):
 # Ensure that the DataParallel setup is correctly applied within the objective function.
 
 study = optuna.create_study(direction='maximize')
-study.optimize(objective, n_trials=200, timeout=None)  # Increased n_trials for better hyperparameter exploration
+study.optimize(objective, n_trials=50, timeout=None)  # Increased n_trials for better hyperparameter exploration
 
 logging.info("===== Best Trial =====")
 best_trial = study.best_trial
@@ -564,7 +474,7 @@ def train_best_model(trial):
     """
     model_name = trial.params['model_name']
 
-    if (model_name == 'ViT16' or model_name == "ViT32"):
+    if model_name == 'ViT':
         img_size = 224  # Fixed for ViT
     else:
         img_size = trial.params.get('img_size', 224)  # Default to 224 if not present
@@ -575,7 +485,7 @@ def train_best_model(trial):
     gamma = trial.params['gamma']
     alpha = trial.params['alpha']
 
-    num_epochs = 70  # Increased epochs for final training
+    num_epochs = 50  # Increased epochs for final training
 
     # Get model
     models_dict = get_models()
