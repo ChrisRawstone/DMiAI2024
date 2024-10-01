@@ -5,8 +5,8 @@
 
 ### name of job, output file and err
 #BSUB -J CT-inpainting
-#BSUB -o inpainting_%J.out
-#BSUB -e inpainting_%J.err
+#BSUB -o hpc_logs/inpainting_%J.out
+#BSUB -e hpc_logs/inpainting_%J.err
 
 
 ### number of cores

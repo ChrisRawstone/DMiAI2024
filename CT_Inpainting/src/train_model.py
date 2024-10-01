@@ -34,7 +34,15 @@ def train(cfg: DictConfig):
     vgg_layers = cfg.training_params.vgg_layers
     perceptual_loss_weight = cfg.training_params.perceptual_loss_weight
     train_size_proportion = cfg.training_params.train_size
-
+    augmentations_list = cfg.training_params.augmentations
+    if augmentations_list is not None:
+        augmentations = []
+        for aug in augmentations_list:
+            if aug == "flipMaskAug":
+                augmentations.append(flipMaskAug())
+            else:
+                raise ValueError(f"Unknown augmentation {aug}")
+            
     # Set the seed for reproducibility
     torch.manual_seed(seed)
     np.random.seed(seed)
@@ -60,9 +68,15 @@ def train(cfg: DictConfig):
     api_key = cfg.wandb.api_key
     wandb.login(key=api_key)
     # Initialize Weights and Biases
+
+    if debug:
+        name_for_wandb = "debug" + "_" + datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    else:
+        name_for_wandb = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+
     wandb.init(
         project=cfg.wandb.project,
-        name = datetime.datetime.now().strftime("%Y%m%d_%H%M%S"),
+        name = name_for_wandb,
         config={
             "learning_rate": learning_rate,
             "epochs": num_epochs,
@@ -89,20 +103,22 @@ def train(cfg: DictConfig):
 
     # Prepare the dataset and dataloaders
     dataset = BaseClass(data_dir=data_dir, transform=transform)
-    
 
-    # split the dataset into training and validation sets usng our custom split_data method
-    train_dataset,val_dataset =dataset.split_data(output_dir, train_size=train_size_proportion, val_size=1-train_size_proportion, seed=seed, augmentations=[flipMaskAug()])
-    #augmented_dataset = AugmentedDataset(dataset, transform)
 
     # Split dataset into training and validation sets
-    train_size = int(train_size_proportion * len(train_dataset))
+    train_size = int(train_size_proportion * len(dataset))
     val_size = len(dataset) - train_size
+    
 
-    # set seed for reproducibility when splitting the dataset
-    #torch.manual_seed(seed)    
-    #train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
-
+    # split the dataset into training and validation sets usng our custom split_data method if augmentations
+    if augmentations is not None:
+        train_dataset,val_dataset =dataset.split_data(output_dir, train_size=train_size_proportion, val_size=1-train_size_proportion, seed=seed, augmentations=augmentations)
+    else:
+        # just use the torch split method       
+        # set seed for reproducibility when splitting the dataset
+        torch.manual_seed(seed)
+        train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
+    
     # if true, use small dataset for testing/debug
     if debug:
         train_dataset = torch.utils.data.Subset(train_dataset, range(8))
@@ -168,6 +184,7 @@ def train(cfg: DictConfig):
         # Validation phase
         model.eval()
         val_loss = 0.0
+        
 
         # Use tqdm to add a progress bar to the validation loop
         with tqdm(total=len(val_loader), desc="Validation", unit="batch") as val_bar:
@@ -188,35 +205,41 @@ def train(cfg: DictConfig):
                     val_bar.update(1)
 
                     # Visualize the first few reconstructed images and ground truth
-                    if batch_idx == 0:  # Visualize the first batch only
-                        inputs_np = inputs[0, 0].cpu().numpy()  # Original corrupted image
-                        mask_np = inputs[0, 1].cpu().numpy()  # Mask image
-                        reconstructed_np = outputs[0, 0].cpu().numpy()  # Reconstructed image
-                        ground_truth_np = labels[0, 0].cpu().numpy()  # Ground truth image
+                    if batch_idx == 0:  # Visualize the first batch only                       
+                        batch_size_plotting = inputs.size(0)  # Get the actual batch size
+                        columns = 4  # Number of images to display per row (corrupted, mask, reconstructed, ground truth)
+                        rows = batch_size  # One row per batch sample
 
-                        # Plotting
-                        fig, axs = plt.subplots(1, 4, figsize=(15, 5))
-                        axs[0].imshow(inputs_np, cmap='gray')
-                        axs[0].set_title('Corrupted Image')
-                        axs[0].axis('off')
+                        fig, axs = plt.subplots(rows, columns, figsize=(15, 5 * batch_size_plotting))
 
-                        axs[1].imshow(mask_np, cmap='gray')
-                        axs[1].set_title('Mask')
-                        axs[1].axis('off')
+                        for i in range(batch_size_plotting):
+                            inputs_np = inputs[i, 0].cpu().numpy()  # Corrupted image for each sample
+                            mask_np = inputs[i, 1].cpu().numpy()  # Mask image for each sample
+                            reconstructed_np = outputs[i, 0].cpu().numpy()  # Reconstructed image for each sample
+                            ground_truth_np = labels[i, 0].cpu().numpy()  # Ground truth image for each sample
 
-                        axs[2].imshow(reconstructed_np, cmap='gray')
-                        axs[2].set_title(f'Reconstructed (Epoch {epoch+1})')
-                        axs[2].axis('off')
+                            # Plotting for each sample
+                            axs[i, 0].imshow(inputs_np, cmap='gray')
+                            axs[i, 0].set_title(f'Corrupted Image (Sample {i+1})')
+                            axs[i, 0].axis('off')
 
-                        axs[3].imshow(ground_truth_np, cmap='gray')
-                        axs[3].set_title('Ground Truth')
-                        axs[3].axis('off')
+                            axs[i, 1].imshow(mask_np, cmap='gray')
+                            axs[i, 1].set_title('Mask')
+                            axs[i, 1].axis('off')
 
-                        # Save the figure
+                            axs[i, 2].imshow(reconstructed_np, cmap='gray')
+                            axs[i, 2].set_title(f'Reconstructed (Epoch {epoch+1})')
+                            axs[i, 2].axis('off')
+
+                            axs[i, 3].imshow(ground_truth_np, cmap='gray')
+                            axs[i, 3].set_title('Ground Truth')
+                            axs[i, 3].axis('off')
+
+                        # Adjust layout
                         plt.tight_layout()
-                        #plt.savefig(f'plots/epoch_{epoch+1}_reconstruction.png')
-                        plt.savefig(f'{output_dir}/epoch_{epoch+1}_reconstruction.png')
-                        #plt.show()
+
+                        # Save the whole batch figure
+                        plt.savefig(f'{output_dir}/epoch_{epoch+1}_batch_reconstruction.png')
 
                         # Convert matplotlib figure to a numpy array
                         fig.canvas.draw()
@@ -224,7 +247,7 @@ def train(cfg: DictConfig):
                         combined_image = combined_image.reshape(fig.canvas.get_width_height()[::-1] + (3,))
 
                         # Log the combined image to W&B
-                        wandb.log({"epoch": epoch + 1, "comparison_images": wandb.Image(combined_image, caption=f"Epoch {epoch+1} Comparison")})
+                        wandb.log({"epoch": epoch + 1, "batch_comparison_images": wandb.Image(combined_image, caption=f"Epoch {epoch+1} Batch Comparison")})
 
                         # Close the plot to free up memory
                         plt.close(fig)
@@ -235,7 +258,7 @@ def train(cfg: DictConfig):
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             #torch.save(model.state_dict(), 'models/best_ct_inpainting_unet.pth')
-            torch.save(model.state_dict(), f'{output_dir}/best_ct_inpainting_unet.pth')        
+            torch.save(model.state_dict(), f'{output_dir}/best_model.pth')        
 
         # Log the validation loss to W&B
         wandb.log({"epoch": epoch + 1, "val_loss": val_loss})

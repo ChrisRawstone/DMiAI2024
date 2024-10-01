@@ -1,4 +1,4 @@
-debug: False
+debug: True
 
 wandb:
   project: CT_Inpainting
@@ -18,7 +18,7 @@ training_params:
 
 hydra:
   run:
-    dir: CT_Inpainting/models/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    dir: CT_Inpainting/models/debug/${now:%Y-%m-%d}/${now:%H-%M-%S}
 
 
 

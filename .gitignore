@@ -164,3 +164,4 @@ cython_debug/
 #.idea/
 CT_Inpainting/data_sorted_by_vertebrae/
 wandb/
+hpc_logs/
