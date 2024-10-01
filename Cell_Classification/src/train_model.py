@@ -59,7 +59,7 @@ CSV_FILE_ORIG_VAL = "data/validation.csv"
 NUM_EPOCHS = 50  # For quick experimentation; increase for better results
 N_SPLITS = 5    # Number of folds for cross-validation
 N_TRIALS = 50    # Number of Optuna trials
-BATCH_SIZE_OPTIONS = [4, 8, 16, 32, 64, 128]
+BATCH_SIZE_OPTIONS = [4, 8, 16]
 IMG_SIZE_OPTIONS = [128, 224, 256, 299, 331, 350, 400, 500]
 MODEL_NAMES = [
     "ViT16",
@@ -73,6 +73,9 @@ MODEL_NAMES = [
     "DenseNet121",
     "SwinV2B",  # Added SwinV2B to model names
 ]
+EARLY_STOPPING_PATIENCE = 10  # Number of epochs to wait for improvement
+EARLY_STOPPING_DELTA = 1e-4  # Minimum improvement to qualify as an improvement
+
 
 # AMP Configuration
 AMP_DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -355,7 +358,7 @@ def update_top_models(model_state_dict, custom_score, trial_number, fold_number,
 
 def objective(trial):
     """
-    Objective function for Optuna hyperparameter optimization with cross-validation.
+    Objective function for Optuna hyperparameter optimization with cross-validation and early stopping.
 
     Args:
         trial (optuna.trial.Trial): Optuna trial object.
@@ -433,6 +436,7 @@ def objective(trial):
         scaler = torch.amp.GradScaler()
 
         best_fold_score = 0
+        epochs_without_improvement = 0  # Counter for early stopping
 
         for epoch in range(NUM_EPOCHS):
             logging.info(f"Fold {fold + 1}, Epoch {epoch + 1}/{NUM_EPOCHS}")
@@ -535,21 +539,32 @@ def objective(trial):
             # Update scheduler
             scheduler.step()
 
-            # Update best score and potentially update top_models
-            if custom_score > best_fold_score:
+            # Early Stopping Check
+            if custom_score > best_fold_score + EARLY_STOPPING_DELTA:
                 best_fold_score = custom_score
+                epochs_without_improvement = 0
+
+                # Optionally, save the best model state here
+                best_model_state = model.module.state_dict() if isinstance(model, nn.DataParallel) else model.state_dict()
 
                 # Update global top models
                 update_top_models(
-                    model_state_dict=model.module.state_dict()
-                    if isinstance(model, nn.DataParallel)
-                    else model.state_dict(),
+                    model_state_dict=best_model_state,
                     custom_score=custom_score,
                     trial_number=trial.number,
                     fold_number=fold +1,
                     model_name=model_name,      # Pass model_name
                     img_size=img_size,          # Pass img_size
                 )
+            else:
+                epochs_without_improvement += 1
+                logging.info(f"No improvement in custom score for {epochs_without_improvement} epoch(s).")
+
+                if epochs_without_improvement >= EARLY_STOPPING_PATIENCE:
+                    logging.info(
+                        f"Early stopping triggered for Fold {fold +1} at Epoch {epoch +1}"
+                    )
+                    break  # Exit the epoch loop
 
         fold_scores.append(best_fold_score)
         logging.info(f"Fold {fold +1} Best Custom Score: {best_fold_score:.4f}")
