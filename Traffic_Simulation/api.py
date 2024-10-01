@@ -6,9 +6,13 @@ from loguru import logger
 from pydantic import BaseModel
 from sim.dtos import TrafficSimulationPredictResponseDto, TrafficSimulationPredictRequestDto, SignalDto
 from collections import defaultdict
+#To do: 
+# 1. Fix counter
+# 2. Fix the logic for the signal pairs, sometimes 3 signals can be green at once. 
+#allowed_green_signal_combinations: [AllowedGreenSignalCombinationDto(name='A1', groups=['A1LeftTurn', 'A2', 'A1RightTurn']), AllowedGreenSignalCombinationDto(name='A1LeftTurn', groups=['A1', 'A2LeftTurn']), AllowedGreenSignalCombinationDto(name='A1RightTurn', groups=['A1', 'A2RightTurn', 'B1RightTurn']), AllowedGreenSignalCombinationDto(name='A2', groups=['A2LeftTurn', 'A2RightTurn', 'A1']), AllowedGreenSignalCombinationDto(name='A2RightTurn', groups=['A2', 'A2LeftTurn', 'B2', 'A1RightTurn', 'B1RightTurn']), AllowedGreenSignalCombinationDto(name='B1', groups=['B1RightTurn', 'B2']), AllowedGreenSignalCombinationDto(name='B1RightTurn', groups=['B1', 'A2RightTurn', 'A1RightTurn']), AllowedGreenSignalCombinationDto(name='B2', groups=['B1'])]
 
 # Fairness parameters
-FAIRNESS_THRESHOLD = 50  # Number of ticks after which a pair must be prioritized
+FAIRNESS_THRESHOLD = 40  # Number of ticks after which a pair must be prioritized
 MIN_GREEN_DURATION = 10   # Minimum duration a signal pair must stay green (in ticks)
 OVERLAP_DURATION = 2      # Duration where both old and new signals remain green (in ticks)
 
@@ -18,6 +22,9 @@ current_green_start_time = 0
 previous_green_pair = None  # To track the previous signal pair for overlap
 previous_green_start_time = 0
 pair_waiting_time = defaultdict(lambda: 0)
+
+HOST = "0.0.0.0"
+PORT = 8080
 
 app = FastAPI()
 start_time = time.time()
@@ -56,11 +63,10 @@ def predict_endpoint(request: TrafficSimulationPredictRequestDto):
     # Decode request
     vehicles = request.vehicles
     signals = request.signals
-    signal_groups = request.signal_groups
     legs = request.legs
     allowed_green_signal_combinations = request.allowed_green_signal_combinations
     current_time = request.simulation_ticks
-
+    print(f"allowed_green_signal_combinations: {allowed_green_signal_combinations}")
     logger.info(f'Number of vehicles at tick {request.simulation_ticks}: {len(vehicles)}')
 
     # Detect reset condition
@@ -69,24 +75,27 @@ def predict_endpoint(request: TrafficSimulationPredictRequestDto):
         current_green_pair = None
         current_green_start_time = current_time  # Reset the start time to current tick
 
-    # Track vehicle counts per signal pair
+    # Track vehicle counts per signal group
+    signal_group_vehicle_counts = defaultdict(int)
+
+    # Count vehicles for each leg and signal group
+    for vehicle in vehicles:
+        for leg in legs:
+            if vehicle.leg == leg.name:
+                # For each leg, increment the vehicle count for each signal group it is associated with
+                for signal_group in leg.signal_groups:
+                    signal_group_vehicle_counts[signal_group] += 1
+
+    # Now associate the signal groups with their pairs
+    valid_pairs = generate_unique_pairs(allowed_green_signal_combinations)
     pair_vehicle_counts = defaultdict(int)
 
-    # Count vehicles per leg and associate them with legal green signal pairs
-    leg_vehicle_counts = defaultdict(int)
-    for vehicle in vehicles:
-        leg_vehicle_counts[vehicle.leg] += 1
-
-    # Calculate vehicle counts for each valid pair
-    valid_pairs = generate_unique_pairs(allowed_green_signal_combinations)
     for pair in valid_pairs:
-        total_count = sum(
-            leg_vehicle_counts[leg.name]
-            for leg in legs
-            for group in leg.signal_groups
-            if group in pair
-        )
-        pair_vehicle_counts[pair] = total_count
+        total_vehicle_count = 0
+        # Sum the vehicle counts for each signal group in the pair
+        for group in pair:
+            total_vehicle_count += signal_group_vehicle_counts[group]
+        pair_vehicle_counts[pair] = total_vehicle_count
 
     # Print vehicle counts for all pairs
     logger.info(f"Vehicle counts for each pair at tick {current_time}:")
@@ -138,6 +147,7 @@ def predict_endpoint(request: TrafficSimulationPredictRequestDto):
         previous_green_start_time = current_green_start_time
         current_green_pair = selected_pair
         current_green_start_time = current_time
+
         logger.info(f"Selected signal pair for green: {selected_pair}")
 
     # Set all signals in the selected pair to green, others to red
@@ -169,9 +179,15 @@ def predict_endpoint(request: TrafficSimulationPredictRequestDto):
     # Sort next_signals by name for consistency
     next_signals = sorted(next_signals, key=lambda x: x.name)
 
-    # Log the signal states and vehicle counts
+    # Print the current status of signals and their associated vehicle counts with color coding
     for signal in next_signals:
-        vehicle_count = pair_vehicle_counts.get(tuple([signal.name]), 0)
+        relevant_pair = None
+        for pair in valid_pairs:
+            if signal.name in pair:
+                relevant_pair = pair
+                break
+
+        vehicle_count = signal_group_vehicle_counts.get(signal.name, 0)
         color = "green" if signal.state == "green" else "red"
         color_code = "\033[92m" if signal.state == "green" else "\033[91m"
         reset_color = "\033[0m"
@@ -183,6 +199,7 @@ def predict_endpoint(request: TrafficSimulationPredictRequestDto):
     )
 
     return response
+
 
 if __name__ == '__main__':
     uvicorn.run(
