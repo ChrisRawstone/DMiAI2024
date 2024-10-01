@@ -17,6 +17,7 @@ from src.data.data_set_augmentations import flipMaskAug
 import datetime
 from omegaconf import DictConfig, OmegaConf
 import hydra
+from torch.optim.lr_scheduler import StepLR
 
 
 def area_to_fill_mask(mask, tissue):
@@ -48,6 +49,7 @@ def train(cfg: DictConfig):
     crop_mask = cfg.training_params.crop_mask
     only_score_within_mask = cfg.training_params.only_score_within_mask
     clamp_output = cfg.training_params.clamp_output
+    use_scheduler = cfg.training_params.use_scheduler
     if augmentations_list:
         augmentations = []
         for aug in augmentations_list:
@@ -72,6 +74,8 @@ def train(cfg: DictConfig):
     
     #optimizer, we could experiment with different optimizers and add to config
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)   
+    if use_scheduler:
+        scheduler = StepLR(optimizer, step_size=10, gamma=0.1)
 
     # get where hydra is storing everything, whis is specified in the config
     hydra_cfg = hydra.core.hydra_config.HydraConfig.get()
@@ -204,6 +208,9 @@ def train(cfg: DictConfig):
                 # Update progress bar for each batch
                 train_bar.set_postfix(loss=total_loss.item())
                 train_bar.update(1)
+        if use_scheduler:
+
+            scheduler.step()
 
         # Calculate average training loss
         total_train_loss = total_train_loss / train_size
