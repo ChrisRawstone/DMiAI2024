@@ -57,8 +57,9 @@ def train(cfg: DictConfig):
         use_attention = False
 
     if "unet_2" in cfg.training_params:
-        # overwrite import of model
-        from src.models.model import UNet_ver_2 as UNet    
+        if cfg.training_params.unet_2:
+            # overwrite import of model
+            from src.models.model import UNet_ver_2 as UNet    
     else:
         from src.models.model import UNet
 

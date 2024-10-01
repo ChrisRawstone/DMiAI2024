@@ -10,7 +10,7 @@
 
 
 ### number of cores
-#BSUB -n 6
+#BSUB -n 8
 # request cpu
 #BSUB -R "rusage[mem=16G]"
 
@@ -20,9 +20,9 @@
 # request 32GB of GPU-memory
 #BSUB -R "select[gpu32gb]"
 
-### wall time limit - the maximum time the job will run. Currently 5 hours, 30 min. 
+### wall time limit - the maximum time the job will run. Currently 4 hours, 30 min. 
 
-#BSUB -W 10:30
+#BSUB -W 14:00
 
 ##BSUB -u s204090@dtu.dk
 ### -- send notification at start -- 
