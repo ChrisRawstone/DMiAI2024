@@ -1,3 +1,4 @@
+import pickle
 from multiprocessing import Process, Queue
 from time import sleep, time
 import numpy as np
@@ -9,7 +10,7 @@ import logging
 
 # Configure logging
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,  # Changed to INFO to reduce verbosity during training
     format='%(asctime)s [%(levelname)s] %(message)s',
     handlers=[
         logging.StreamHandler()
@@ -58,12 +59,9 @@ class RLAgent:
         self.q_table[(state_key, action)] = q_predict + self.alpha * (q_target - q_predict)
         logging.debug(f"Updated Q-value for state {state_key} and action {action}: {self.q_table[(state_key, action)]:.2f} (Reward: {reward}, Q_target: {q_target:.2f})")
 
-
     def decay_epsilon(self):
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
-
-
 
 def generate_allowed_configurations(allowed_green_signal_combinations):
     # This function generates all allowed configurations of signals
@@ -92,32 +90,30 @@ def get_state_representation(state, signal_names):
         count = 0
         for vehicle in state.vehicles:
             if vehicle.leg == signal_name:
-                if vehicle.speed < 0.1:
+                if vehicle.speed < 0.5:
                     count += 1
         # Discretize the count into bins: 0, 1-2, 3+
         if count == 0:
             bin_value = 0
-        elif count <= 2:
-            bin_value = 1
+        elif count <= 5:
+            bin_value = 5
+        elif (count >= 5 and count <= 15):
+            bin_value = 20
         else:
-            bin_value = 2
+            bin_value = 30
         vehicle_counts.append(bin_value)
     return vehicle_counts
 
 def compute_reward(state):
     count = 0
     for vehicle in state.vehicles:
-        if vehicle.speed < 0.1:
+        if vehicle.speed < 0.5:
             count += 1
     # We can define the reward as negative of the count
     reward = -count
     return reward
 
-def run_game():
-
-    test_duration_seconds = 600
-    random = True
-    configuration_file = "models/1/glue_configuration.yaml"
+def run_simulation(configuration_file, test_duration_seconds=600, random=True):
     start_time = time()
 
     input_queue = Queue()
@@ -126,12 +122,12 @@ def run_game():
     errors = []
 
     p = Process(target=load_and_run_simulation, args=(configuration_file,
-                                                        start_time,
-                                                        test_duration_seconds,
-                                                        random,
-                                                        input_queue,
-                                                        output_queue,
-                                                        error_queue))
+                                                       start_time,
+                                                       test_duration_seconds,
+                                                       random,
+                                                       input_queue,
+                                                       output_queue,
+                                                       error_queue))
     
     p.start()
 
@@ -141,14 +137,26 @@ def run_game():
     # For logging
     actions = {}
 
-    # Initialize RL agent variables
+    return p, input_queue, output_queue, error_queue, actions
+
+def run_episode(agent, configuration_file="models/1/glue_configuration.yaml", test_duration_seconds=600, random=True):
+    p, input_queue, output_queue, error_queue, actions = run_simulation(configuration_file, test_duration_seconds, random)
+
     agent_initialized = False
     previous_state = None
     previous_action = None
+    signal_names = []
+    allowed_configurations = []
 
     while True:
 
-        state = output_queue.get()
+        try:
+            state = output_queue.get(timeout=5)  # Timeout to prevent hanging
+        except:
+            logging.warning("No state received. Terminating simulation.")
+            p.terminate()
+            p.join()
+            break
 
         if state.is_terminated:
             p.join()
@@ -158,19 +166,19 @@ def run_game():
             # Initialize the agent
             signal_names = [signal.name for signal in state.signals]
             allowed_configurations = generate_allowed_configurations(state.allowed_green_signal_combinations)
-            action_size = len(allowed_configurations)
-            state_size = len(signal_names)
-            agent = RLAgent(state_size, action_size)
+            if agent.state_size != len(signal_names) or agent.action_size != len(allowed_configurations):
+                logging.warning("State size or action size mismatch. Skipping this episode.")
+                p.terminate()
+                p.join()
+                return None
             agent_initialized = True
             logging.info("RL Agent initialized.")
-
 
         current_state = get_state_representation(state, signal_names)
 
         action_index = agent.choose_action(current_state)
         selected_configuration = allowed_configurations[action_index]
-        logging.info(f"Tick {state.simulation_ticks}: Selected action {action_index} with configuration {selected_configuration}")
-
+        logging.debug(f"Tick {state.simulation_ticks}: Selected action {action_index} with configuration {selected_configuration}")
 
         prediction = {}
         prediction["signals"] = []
@@ -207,11 +215,72 @@ def run_game():
     if state.total_score == 0:
         state.total_score = 1e9
 
-
     logging.info(f"Final inverted score: {state.total_score}")
-
 
     return state.total_score
 
+def main():
+    num_episodes = 300  # Set the number of training episodes
+    configuration_file = "models/1/glue_configuration.yaml"
+    test_duration_seconds = 300  # Duration per simulation
+
+    # Initialize variables to track performance
+    scores = []
+
+    # Temporary variables to determine state and action sizes
+    temp_p, temp_input_queue, temp_output_queue, temp_error_queue, temp_actions = run_simulation(configuration_file, test_duration_seconds)
+    sleep(0.2)
+    try:
+        temp_state = temp_output_queue.get(timeout=5)
+    except:
+        logging.error("Failed to retrieve initial state. Exiting.")
+        temp_p.terminate()
+        temp_p.join()
+        return
+
+    signal_names = [signal.name for signal in temp_state.signals]
+    allowed_configurations = generate_allowed_configurations(temp_state.allowed_green_signal_combinations)
+    state_size = len(signal_names)
+    action_size = len(allowed_configurations)
+
+    # Initialize RL agent
+    agent = RLAgent(state_size, action_size)
+    logging.info(f"Initialized RLAgent with state size {state_size} and action size {action_size}")
+
+    temp_p.terminate()
+    temp_p.join()
+
+    for episode in range(1, num_episodes + 1):
+        logging.info(f"Starting Episode {episode}/{num_episodes}")
+        score = run_episode(agent, configuration_file, test_duration_seconds, random=True)
+        if score is not None:
+            scores.append(score)
+            logging.info(f"Episode {episode} Score: {score}")
+        else:
+            logging.warning(f"Episode {episode} failed to complete.")
+
+    # Save the trained Q-table
+    with open('q_table.pkl', 'wb') as f:
+        pickle.dump(dict(agent.q_table), f)
+    logging.info("Training completed. Q-table saved to 'q_table.pkl'.")
+
+    # Optionally, save additional agent parameters if needed
+    agent_parameters = {
+        'state_size': agent.state_size,
+        'action_size': agent.action_size,
+        'alpha': agent.alpha,
+        'gamma': agent.gamma,
+        'epsilon': agent.epsilon,
+        'epsilon_min': agent.epsilon_min,
+        'epsilon_decay': agent.epsilon_decay
+    }
+    with open('agent_parameters.pkl', 'wb') as f:
+        pickle.dump(agent_parameters, f)
+    logging.info("Agent parameters saved to 'agent_parameters.pkl'.")
+
+    # Optionally, log average score
+    average_score = np.mean(scores) if scores else 0
+    logging.info(f"Average Score over {num_episodes} episodes: {average_score}")
+
 if __name__ == '__main__':
-    run_game()
+    main()

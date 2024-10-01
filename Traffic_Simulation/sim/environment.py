@@ -450,7 +450,7 @@ class TrafficSimulationEnvHandler():
         self._simulation_is_running = True
 
         logger.info('Traffic simulation - starting sumo....')
-        sumoBinary = checkBinary('sumo-gui')
+        sumoBinary = checkBinary('sumo')
 
         sim_instance = uuid4().hex
 
@@ -472,7 +472,7 @@ class TrafficSimulationEnvHandler():
             
             if self.simulation_ticks < (self._test_duration_seconds + self.warm_up_ticks):
                 self._run_one_tick()
-                sleep(1)
+                sleep(0.01)
             else:
                 self._run_one_tick(terminates_now=True)
                 break
