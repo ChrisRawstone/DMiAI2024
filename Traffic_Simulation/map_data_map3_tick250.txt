@@ -1,0 +1,5 @@
+Vehicle count data at tick 250 for map 3:
+Leg A1: 24 vehicles
+Leg A2: 17 vehicles
+Leg B1: 16 vehicles
+Leg B2: 14 vehicles
