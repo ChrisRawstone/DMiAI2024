@@ -207,11 +207,11 @@ def run_game():
     if state.total_score == 0:
         state.total_score = 1e9
 
-    inverted_score = 1. / state.total_score
-    logging.info(f"Final inverted score: {inverted_score}")
+
+    logging.info(f"Final inverted score: {state.total_score}")
 
 
-    return inverted_score
+    return state.total_score
 
 if __name__ == '__main__':
     run_game()
