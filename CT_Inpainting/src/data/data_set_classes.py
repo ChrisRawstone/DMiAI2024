@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt  # Import matplotlib for visualization
 import numpy as np
 from src.models.model import UNet
 from src.data.data_set_augmentations import flipMaskAug
+from src.preprocessing import segment_image_kmeans
 import datetime
 import shutil
 
@@ -187,8 +188,35 @@ class BaseClass(Dataset):
 
         return train_dataset, val_dataset
 
+    def find_segment_pr_vertebrae(self,num_segments=5):
+        """
+        Find the average image per vertebrae
+        """
+        assert self.vertebrae_dir is not None, "Vertebrae path is required"
+        ct_sorted_by_vertebrae = {i: [] for i in range(0,25)}
+        for identifier in self.identifers:
+            with open(os.path.join(self.vertebrae_dir, 'vertebrae_' + identifier + '.txt'), 'r') as f:
+                vertebrae_num = int(f.read().strip())
+            # open the ct image
+            ct = Image.open(os.path.join(self.ct_dir, 'ct_' + identifier + '.png')).convert('L')
+            ct = self.transform(ct)
+            ct_sorted_by_vertebrae[vertebrae_num].append(ct)
 
+        # create dict for each vertebrae number        
+        # find the average image per vertebrae
+        temp_dict = {}
+        for vertebrae_num, cts in ct_sorted_by_vertebrae.items():
+            # segment the images
+            segmented_cts = [segment_image_kmeans(ct, num_segments) for ct in cts]
+            # add the segmented images to the temp dict
+            temp_dict[vertebrae_num] = segmented_cts
 
+        return temp_dict
+ 
+
+    
+    
+   
 
 
 
