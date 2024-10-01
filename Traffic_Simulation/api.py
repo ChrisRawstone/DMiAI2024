@@ -6,28 +6,56 @@ from loguru import logger
 from pydantic import BaseModel
 from sim.dtos import TrafficSimulationPredictResponseDto, TrafficSimulationPredictRequestDto, SignalDto
 from collections import defaultdict
-#To do: 
-# 1. Fix counter
-# 2. Fix the logic for the signal pairs, sometimes 3 signals can be green at once. 
-#allowed_green_signal_combinations: [AllowedGreenSignalCombinationDto(name='A1', groups=['A1LeftTurn', 'A2', 'A1RightTurn']), AllowedGreenSignalCombinationDto(name='A1LeftTurn', groups=['A1', 'A2LeftTurn']), AllowedGreenSignalCombinationDto(name='A1RightTurn', groups=['A1', 'A2RightTurn', 'B1RightTurn']), AllowedGreenSignalCombinationDto(name='A2', groups=['A2LeftTurn', 'A2RightTurn', 'A1']), AllowedGreenSignalCombinationDto(name='A2RightTurn', groups=['A2', 'A2LeftTurn', 'B2', 'A1RightTurn', 'B1RightTurn']), AllowedGreenSignalCombinationDto(name='B1', groups=['B1RightTurn', 'B2']), AllowedGreenSignalCombinationDto(name='B1RightTurn', groups=['B1', 'A2RightTurn', 'A1RightTurn']), AllowedGreenSignalCombinationDto(name='B2', groups=['B1'])]
 
-# Fairness parameters
-FAIRNESS_THRESHOLD = 40  # Number of ticks after which a pair must be prioritized
-MIN_GREEN_DURATION = 10   # Minimum duration a signal pair must stay green (in ticks)
-OVERLAP_DURATION = 2      # Duration where both old and new signals remain green (in ticks)
+# Time-based cycling parameters
+CYCLE_DURATION = 20  # Seconds to change signal groups
+VEHICLE_THRESHOLD = 5  # Vehicle count to trigger reset
+RESET_TICK_THRESHOLD = 50  # Check reset only after 50 ticks
+OVERLAP_DURATION = 1  # Seconds of overlap between two signal groups
 
-# Track the last green signal pair and its activation time
-current_green_pair = None
-current_green_start_time = 0
-previous_green_pair = None  # To track the previous signal pair for overlap
-previous_green_start_time = 0
-pair_waiting_time = defaultdict(lambda: 0)
+# Lists for signal combinations
+# first_list = [
+#     ['A1', 'A2'],
+#     ['A1', 'A1LeftTurn'],
+#     ['A2', 'A2LeftTurn'],
+#     ['B1', 'B2'],
+#     ['B1', 'B1LeftTurn'],
+#     ['B2', 'B2LeftTurn']
+# ]
 
-HOST = "0.0.0.0"
-PORT = 8080
+# second_list = [
+#     ['A1', 'A2', 'A2RightTurn', 'A1RightTurn'],
+#     ['A2', 'A2RightTurn', 'A2LeftTurn'],
+#     ['B1', 'B2', 'B1RightTurn'],
+#     ['B2', 'A2RightTurn', 'B1RightTurn'],
+#     ['B1', 'B1RightTurn', 'A1RightTurn'],
+#     ['A1', 'A1RightTurn', 'A1LeftTurn'],
+#     ['A1LeftTurn', 'A2LeftTurn', 'B1RightTurn']
+# ]
 
+first_list = [
+    ['A1', 'A1LeftTurn'],
+    ['A2', 'A2LeftTurn'],
+    ['B1', 'B1LeftTurn'],
+    ['B2', 'B2LeftTurn']
+]
+
+second_list = [
+    ['A1', 'A1RightTurn', 'A1LeftTurn'],
+    ['A2', 'A2RightTurn', 'A2LeftTurn'],
+    ['B1', 'B1RightTurn', 'A1RightTurn'],
+    ['B1', 'B2', 'B1RightTurn'],
+]
+    
+
+# Initial setup
 app = FastAPI()
+current_list = first_list
+current_index = 0
 start_time = time.time()
+tick_count = 0
+previous_group = None  # To track the previous signal group for overlap
+overlap_start_time = None  # To track the start time of overlap
 
 @app.get('/api')
 def hello():
@@ -40,160 +68,74 @@ def hello():
 def index():
     return "Your endpoint is running!"
 
-def generate_unique_pairs(allowed_green_signal_combinations):
-    """
-    Generate valid unique pairs from allowed_green_signal_combinations.
-    Ensures no duplicate pairs like (A1, A2) and (A2, A1).
-    """
-    valid_pairs = set()
-
-    for combination in allowed_green_signal_combinations:
-        for group in combination.groups:
-            if combination.name != group:
-                # Sort the pair to ensure uniqueness (A1, A2) == (A2, A1)
-                pair = tuple(sorted([combination.name, group]))
-                valid_pairs.add(pair)
-
-    return list(valid_pairs)
-
+timetochange = False
 @app.post('/predict', response_model=TrafficSimulationPredictResponseDto)
 def predict_endpoint(request: TrafficSimulationPredictRequestDto):
-    global current_green_pair, current_green_start_time, previous_green_pair, previous_green_start_time
-
-    # Decode request
+    global current_list, current_index, tick_count, start_time, timetochange, previous_group, overlap_start_time
+    # Decode request data
     vehicles = request.vehicles
     signals = request.signals
-    legs = request.legs
-    allowed_green_signal_combinations = request.allowed_green_signal_combinations
+    legs = request.legs  # Assuming legs contain the signal groups
     current_time = request.simulation_ticks
-    print(f"allowed_green_signal_combinations: {allowed_green_signal_combinations}")
-    logger.info(f'Number of vehicles at tick {request.simulation_ticks}: {len(vehicles)}')
+    tick_count = current_time
+    logger.info(f'Number of vehicles at tick {current_time}: {len(vehicles)}')
+
+    if tick_count > 200:
+        timetochange = True
+    if timetochange:
+        if len(vehicles) < 5:
+            current_list = second_list
 
     # Detect reset condition
-    if len(vehicles) < 5:
-        logger.warning("Reset detected! Resetting current green signal and start time.")
-        current_green_pair = None
-        current_green_start_time = current_time  # Reset the start time to current tick
+    if len(vehicles) < VEHICLE_THRESHOLD and tick_count >= RESET_TICK_THRESHOLD:
+        logger.warning("Reset detected! Switching to the second signal list.")
+        current_list = second_list
+        current_index = 0
 
-    # Track vehicle counts per signal group
+    # Cycle through the current list every 15 seconds
+    if time.time() - start_time >= CYCLE_DURATION:
+        previous_group = current_list[current_index]  # Store the current group as the previous group
+        current_index = (current_index + 1) % len(current_list)
+        logger.info(f"Switching to signal group: {current_list[current_index]}")
+        overlap_start_time = time.time()  # Start overlap period
+        start_time = time.time()
+
+    # Log if second list is used
+    if current_list == second_list:
+        logger.info(f"Second list is used")
+    else:
+        logger.info(f"First list is used")
+        
+    # Get the active signal group
+    active_group = current_list[current_index]
+    logger.info(f"Active signal group: {active_group}")
+
+    # Prepare next signals with overlap handling
+    next_signals = []
     signal_group_vehicle_counts = defaultdict(int)
 
-    # Count vehicles for each leg and signal group
+    # Count vehicles based on the leg's signal groups
     for vehicle in vehicles:
         for leg in legs:
-            if vehicle.leg == leg.name:
-                # For each leg, increment the vehicle count for each signal group it is associated with
-                for signal_group in leg.signal_groups:
+            if vehicle.leg == leg.name:  # Assuming legs have names and signal groups
+                # Count vehicles associated with signal groups in the leg
+                for signal_group in leg.signal_groups:  # Access signal groups via the leg
                     signal_group_vehicle_counts[signal_group] += 1
 
-    # Now associate the signal groups with their pairs
-    valid_pairs = generate_unique_pairs(allowed_green_signal_combinations)
-    pair_vehicle_counts = defaultdict(int)
-
-    for pair in valid_pairs:
-        total_vehicle_count = 0
-        # Sum the vehicle counts for each signal group in the pair
-        for group in pair:
-            total_vehicle_count += signal_group_vehicle_counts[group]
-        pair_vehicle_counts[pair] = total_vehicle_count
-
-    # Print vehicle counts for all pairs
-    logger.info(f"Vehicle counts for each pair at tick {current_time}:")
-    for pair, count in pair_vehicle_counts.items():
-        logger.info(f"Pair {pair}: with vehicle count: {count}")
-
-    # Increment waiting times for pairs that are not green
+    # Set signals to green if they are in the active group or in the previous group during overlap
     for signal in signals:
-        if signal.state != "green":
-            pair_waiting_time[signal.name] += 1
+        if signal.name in active_group:
+            next_signals.append(SignalDto(name=signal.name, state="green"))
+            logger.info(f"\033[92mSignal {signal.name} is green with {signal_group_vehicle_counts[signal.name]} vehicles.\033[0m")
+        elif previous_group and signal.name in previous_group and overlap_start_time and (time.time() - overlap_start_time < OVERLAP_DURATION):
+            # Keep previous group signals green for the overlap duration
+            next_signals.append(SignalDto(name=signal.name, state="green"))
+            logger.info(f"\033[93mSignal {signal.name} is still green (overlap) with {signal_group_vehicle_counts[signal.name]} vehicles.\033[0m")
         else:
-            pair_waiting_time[signal.name] = 0  # Reset waiting time if it's green
+            next_signals.append(SignalDto(name=signal.name, state="red"))
+            logger.info(f"\033[91mSignal {signal.name} is red with {signal_group_vehicle_counts[signal.name]} vehicles.\033[0m")
 
-    # Keep the current green pair active for the minimum green duration
-    if current_green_pair and (current_time - current_green_start_time) < MIN_GREEN_DURATION:
-        selected_pair = current_green_pair
-        logger.info(f"Keeping current green signal pair: {selected_pair} (active for {current_time - current_green_start_time} ticks)")
-    else:
-        # Sort pairs by vehicle count, then by waiting time
-        sorted_pairs = sorted(
-            valid_pairs,
-            key=lambda pair: (-pair_vehicle_counts[pair], -pair_waiting_time[pair])
-        )
-
-        # Select the legal green signal pair with the most cars or the one that has waited too long
-        selected_pair = None
-        for pair in sorted_pairs:
-            if pair_waiting_time[pair] >= FAIRNESS_THRESHOLD:
-                selected_pair = pair  # Prioritize based on fairness
-                break
-            elif pair_vehicle_counts[pair] > 0:
-                selected_pair = pair  # Prioritize based on vehicle count
-                break
-
-        # If no pair is selected, prioritize by max waiting time
-        if not selected_pair:
-            for pair in valid_pairs:
-                if pair_waiting_time[pair] >= FAIRNESS_THRESHOLD:
-                    selected_pair = pair
-                    break
-
-        # Default to the first pair if no selection is made (shouldn't happen)
-        if not selected_pair:
-            logger.warning("No pair selected, defaulting to the first pair")
-            selected_pair = valid_pairs[0]
-
-        # Set the new green pair and its start time
-        previous_green_pair = current_green_pair  # Track the previous pair for overlap
-        previous_green_start_time = current_green_start_time
-        current_green_pair = selected_pair
-        current_green_start_time = current_time
-
-        logger.info(f"Selected signal pair for green: {selected_pair}")
-
-    # Set all signals in the selected pair to green, others to red
-    next_signals = []
-    processed_signals = set()  # Track the signals that have been processed
-
-    # Apply overlap logic: if the previous pair exists and is still within the overlap period, keep them green
-    if previous_green_pair and (current_time - previous_green_start_time) < (MIN_GREEN_DURATION + OVERLAP_DURATION):
-        logger.info(f"Keeping previous pair {previous_green_pair} green for overlap.")
-        for group in previous_green_pair:
-            if group not in processed_signals:
-                next_signals.append(SignalDto(name=group, state="green"))
-                processed_signals.add(group)
-
-    # Set the selected pair to green
-    for group in selected_pair:
-        if group not in processed_signals:
-            next_signals.append(SignalDto(name=group, state="green"))
-            processed_signals.add(group)
-
-    # Set the rest to red
-    for pair in valid_pairs:
-        if pair != selected_pair:
-            for group in pair:
-                if group not in processed_signals:
-                    next_signals.append(SignalDto(name=group, state="red"))
-                    processed_signals.add(group)
-
-    # Sort next_signals by name for consistency
-    next_signals = sorted(next_signals, key=lambda x: x.name)
-
-    # Print the current status of signals and their associated vehicle counts with color coding
-    for signal in next_signals:
-        relevant_pair = None
-        for pair in valid_pairs:
-            if signal.name in pair:
-                relevant_pair = pair
-                break
-
-        vehicle_count = signal_group_vehicle_counts.get(signal.name, 0)
-        color = "green" if signal.state == "green" else "red"
-        color_code = "\033[92m" if signal.state == "green" else "\033[91m"
-        reset_color = "\033[0m"
-        logger.info(f"{color_code}Signal {signal.name} is {color} with {vehicle_count} vehicles.{reset_color}")
-
-    # Return the next signals to the evaluation service
+    # Return the updated signals to the simulation
     response = TrafficSimulationPredictResponseDto(
         signals=next_signals
     )
@@ -204,6 +146,6 @@ def predict_endpoint(request: TrafficSimulationPredictRequestDto):
 if __name__ == '__main__':
     uvicorn.run(
         'api:app',
-        host=HOST,
-        port=PORT
+        host="0.0.0.0",
+        port=8080
     )
