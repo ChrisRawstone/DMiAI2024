@@ -1,5 +1,7 @@
 from PIL import Image
 import numpy as np
+import random
+import os
 
 
 
@@ -62,6 +64,34 @@ class flipMaskAug(BaseAugmentation):
     
 
 
+class randomMaskAug(BaseAugmentation):
+    def __init__(self):
+        super().__init__()
 
+    def augmentation(self, mask=None, ct=None, tissue=None):
+        """
+        Returns a total of 4 images, corresponding to four 90-degree rotations of the mask applied to the ct image.
+        """
+        images = []
+        # get 4 random mask from the orginal data folder:
+        folder = "CT_Inpainting/data/mask"
+        # list of mask files
+        mask_files = os.listdir(folder)
+        # get 4 random mask
+        random_mask_files = random.sample(mask_files, 4)
+        # read the images using PIL
+        masks = [Image.open(os.path.join(folder, file)) for file in random_mask_files]
+
+
+        for random_mask in masks:            
+            corrupted_image = self.apply_mask_ct(ct, random_mask)
+
+            images.append({
+                'corrupted': corrupted_image,
+                'mask': random_mask,
+                'tissue': tissue, 
+            })
+
+        return images
     
 

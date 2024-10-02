@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt  # Import matplotlib for visualization
 import numpy as np
 from src.model_classes.model import VGG19Features, PerceptualLoss
 from src.data.data_set_classes import BaseClass
-from src.data.data_set_augmentations import flipMaskAug
+from src.data.data_set_augmentations import flipMaskAug, randomMaskAug
 import datetime
 from omegaconf import DictConfig, OmegaConf
 import hydra
@@ -50,7 +50,10 @@ def train(cfg: DictConfig):
     only_score_within_mask = cfg.training_params.only_score_within_mask
     clamp_output = cfg.training_params.clamp_output
     use_scheduler = cfg.training_params.use_scheduler
-    proportion_to_leave_unchanged = cfg.training_params.proportion_to_leave_unchanged
+    if "proportion_to_leave_unchanged" in cfg.training_params:
+        proportion_to_leave_unchanged = cfg.training_params.proportion_to_leave_unchanged
+    else:
+        proportion_to_leave_unchanged = 0.0
     # check if training_params.use_attention is in the config
     if "use_attention" in cfg.training_params:
         use_attention = cfg.training_params.use_attention
@@ -78,11 +81,11 @@ def train(cfg: DictConfig):
         for aug in augmentations_list:
             if aug == "flipMaskAug":
                 augmentations.append(flipMaskAug())
+            elif aug == "randomMaskAug":
+                augmentations.append(randomMaskAug())
             else:
                 raise ValueError(f"Unknown augmentation {aug}")
     
-
-            
     # Set the seed for reproducibility
     torch.manual_seed(seed)
     np.random.seed(seed)
@@ -96,7 +99,7 @@ def train(cfg: DictConfig):
     #optimizer, we could experiment with different optimizers and add to config
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)   
     if use_scheduler:
-        scheduler = StepLR(optimizer, step_size=10, gamma=0.1)
+        scheduler = StepLR(optimizer, step_size=50, gamma=0.1)
 
     # get where hydra is storing everything, whis is specified in the config
     hydra_cfg = hydra.core.hydra_config.HydraConfig.get()
