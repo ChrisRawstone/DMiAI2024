@@ -12,7 +12,7 @@ import wandb  # Import wandb for Weights and Biases integration
 from tqdm import tqdm  # Import tqdm for progress bars
 import matplotlib.pyplot as plt  # Import matplotlib for visualization
 import numpy as np
-from src.models.model import UNet, VGG19Features, PerceptualLoss
+from src.model_classes.model import UNet, VGG19Features, PerceptualLoss
 from data.data_set_classes import BaseClass
 from src.data.data_set_augmentations import flipMaskAug
 import datetime

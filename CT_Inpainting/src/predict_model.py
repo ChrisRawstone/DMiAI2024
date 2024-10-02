@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 from src.utils import l1_score, plot_prediction, load_sample
-from src.models.model import UNet  # Assuming you have the UNet model in src.models.model
+from src.model_classes.model import UNet  # Assuming you have the UNet model in src.models.model
 #from src.train_model import CTInpaintingDataset  # Import the dataset class from train.py
 from torchvision import transforms
 

@@ -11,7 +11,7 @@ import wandb  # Import wandb for Weights and Biases integration
 from tqdm import tqdm  # Import tqdm for progress bars
 import matplotlib.pyplot as plt  # Import matplotlib for visualization
 import numpy as np
-from src.models.model import UNet
+from src.model_classes.model import UNet
 import datetime
 
 

@@ -6,7 +6,7 @@ from src.utils import validate_reconstruction, encode_image, decode_request
 from loguru import logger
 from pydantic import BaseModel
 
-from src.models.model import UNet
+from src.model_classes.model import UNet
 import torch
 from src.predict_model import predict, apply_only_to_mask
 

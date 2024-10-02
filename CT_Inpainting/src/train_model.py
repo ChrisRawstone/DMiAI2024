@@ -11,7 +11,7 @@ import wandb  # Import wandb for Weights and Biases integration
 from tqdm import tqdm  # Import tqdm for progress bars
 import matplotlib.pyplot as plt  # Import matplotlib for visualization
 import numpy as np
-from src.models.model import VGG19Features, PerceptualLoss
+from src.model_classes.model import VGG19Features, PerceptualLoss
 from src.data.data_set_classes import BaseClass
 from src.data.data_set_augmentations import flipMaskAug
 import datetime
@@ -62,14 +62,14 @@ def train(cfg: DictConfig):
         if cfg.training_params.unet_2:
             # overwrite import of model
             print("Using UNet version 2")
-            from src.models.model_2 import UNet
+            from src.model_classes.model_2 import UNet
             print("Using UNet version 2")
             model = UNet().to(device)
         else:
-            from src.models.model import UNet
+            from src.model_classes.model import UNet
             model = UNet(use_attention=use_attention).to(device)
     else:
-        from src.models.model import UNet
+        from src.model_classes.model import UNet
         model = UNet(use_attention=use_attention).to(device)
 
     augmentations = []
