@@ -8,7 +8,7 @@ import wandb
 import random
 import logging
 import gc
-from models.model import get_models, FocalLoss, get_model_parallel
+from models.model import get_models, FocalLoss, get_model_parallel, LabelSmoothingLoss, BalancedBCELoss
 from data.make_dataset import LoadTifDataset, get_transforms
 from tqdm import tqdm
 from threading import Lock
@@ -17,6 +17,7 @@ from pathlib import Path
 from sklearn.model_selection import StratifiedKFold
 from src.utils import calculate_custom_score
 from torch.utils.data import DataLoader
+from collections import Counter
 
 wandb.login(key="c187178e0437c71d461606e312d20dc9f1c6794f")
 
@@ -123,6 +124,12 @@ def objective(trial):
     Returns:
         float: Validation custom score to maximize.
     """
+    seed = trial.number
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    
     torch.cuda.empty_cache()  
     gc.collect()  
     global best_custom_score
@@ -152,15 +159,25 @@ def objective(trial):
     batch_size = trial.suggest_categorical('batch_size', [4, 8])
     lr = trial.suggest_float('lr', 1e-6, 1e-2, log=True)
     weight_decay = trial.suggest_float('weight_decay', 1e-6, 1e-2, log=True)
+    
     gamma = trial.suggest_float('gamma', 1.0, 3.0)
     alpha = trial.suggest_float('alpha', 0.1, 0.9)
-
-    num_epochs = NUM_EPOCHS  # Total number of epochs
-    patience = PATIENCE_EPOCHS    # Early stopping patience
-
+    
+    # Add loss_function as a hyperparameter
+    loss_function = trial.suggest_categorical('loss_function', [
+        'BCEWithLogitsLoss',
+        'WeightedBCEWithLogitsLoss',
+        'FocalLoss',
+        'BalancedCrossEntropyLoss',
+        'LabelSmoothingLoss'
+    ])
+    
     # ---------------------------
     # 2. Initialize wandb Run
     # ---------------------------
+    num_epochs = NUM_EPOCHS  # Total number of epochs
+    patience = PATIENCE_EPOCHS    # Early stopping patience
+    
     wandb_config = {
         'model_name': model_name,
         'img_size': img_size,
@@ -169,8 +186,46 @@ def objective(trial):
         'weight_decay': weight_decay,
         'gamma': gamma,
         'alpha': alpha,
+        'loss_function': loss_function,
         'num_epochs': num_epochs,
         'patience': patience}
+    
+    # Sample optimizer hyperparameters before the fold loop
+    optimizer_name = trial.suggest_categorical('optimizer_name', ['AdamW', 'SGD', 'RMSprop'])
+
+    # Add specific configurations based on the optimizer chosen
+    if optimizer_name == 'SGD':
+        momentum = trial.suggest_float('momentum', 0.8, 0.99)
+        optimizer_hyperparams = {
+            'momentum': momentum,
+            'weight_decay': weight_decay
+        }
+    elif optimizer_name in ['AdamW', 'Adam']:
+        beta1 = trial.suggest_float('beta1', 0.8, 0.99)
+        beta2 = trial.suggest_float('beta2', 0.9, 0.999)
+        epsilon = trial.suggest_float('epsilon', 1e-8, 1e-6)
+        optimizer_hyperparams = {
+            'betas': (beta1, beta2),
+            'eps': epsilon,
+            'weight_decay': weight_decay
+        }
+    elif optimizer_name == 'RMSprop':
+        alpha_optim = trial.suggest_float('alpha_optim', 0.9, 0.99)
+        epsilon = trial.suggest_float('epsilon', 1e-8, 1e-6)
+        optimizer_hyperparams = {
+            'alpha': alpha_optim,
+            'eps': epsilon,
+            'weight_decay': weight_decay
+        }
+        
+    # Update wandb config with optimizer hyperparameters
+    wandb_config.update({
+        'optimizer_name': optimizer_name,
+        'momentum': optimizer_hyperparams.get('momentum', None),
+        'beta1': beta1 if optimizer_name in ['AdamW', 'Adam'] else None,
+        'beta2': beta2 if optimizer_name in ['AdamW', 'Adam'] else None,
+        'epsilon': optimizer_hyperparams.get('eps', None),
+        'alpha_optim': optimizer_hyperparams.get('alpha', None)})
 
     wandb.init(
         project='Cell_Classification_Test',  # Replace with your wandb project name
@@ -196,7 +251,16 @@ def objective(trial):
     )
 
     # Extract labels from the full dataset
-    labels = full_dataset.labels_df.iloc[:, 1].values  # Assuming labels are in the second column
+    labels = full_dataset.labels_df.iloc[:, 1].values.astype(int)  # Assuming labels are in the second column
+
+    # Compute class counts and pos_weight for Weighted BCE Loss
+    class_counts = Counter(labels)
+    num_positive = class_counts[1] if 1 in class_counts else 0
+    num_negative = class_counts[0] if 0 in class_counts else 0
+    if num_positive == 0 or num_negative == 0:
+        pos_weight = 1.0  # Avoid division by zero; adjust as needed
+    else:
+        pos_weight = num_negative / num_positive
 
     # Get indices
     indices = np.arange(len(full_dataset))
@@ -245,40 +309,53 @@ def objective(trial):
         model = models_dict[model_name]
         model = get_model_parallel(model)
         model = model.to(device)
+        
+        # Set up the loss function based on loss_function hyperparameter
+        if loss_function == 'BCEWithLogitsLoss':
+            criterion = nn.BCEWithLogitsLoss().to(device)
+        elif loss_function == 'WeightedBCEWithLogitsLoss':
+            pos_weight_tensor = torch.tensor([pos_weight], dtype=torch.float).to(device)
+            criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight_tensor).to(device)
+        elif loss_function == 'FocalLoss':
+            criterion = FocalLoss(alpha=alpha, gamma=gamma, logits=True).to(device)
+        elif loss_function == 'BalancedCrossEntropyLoss':
+            criterion = BalancedBCELoss().to(device)
+        elif loss_function == 'LabelSmoothingLoss':
+            criterion = LabelSmoothingLoss(alpha).to(device)
 
-        criterion = FocalLoss(alpha=alpha, gamma=gamma, logits=True).to(device)
-
-        optimizer_name = trial.suggest_categorical('optimizer_name', ['AdamW', 'SGD', 'RMSprop'])
-
-        # Add specific configurations based on the optimizer chosen
+        # Create optimizer using the sampled hyperparameters
         if optimizer_name == 'SGD':
-            momentum = trial.suggest_float('momentum', 0.8, 0.99)
-            optimizer = optim.SGD(model.parameters(), lr=lr, momentum=momentum, weight_decay=weight_decay)
-        elif optimizer_name == 'AdamW' or optimizer_name == 'Adam':
-            beta1 = trial.suggest_float('beta1', 0.8, 0.99)
-            beta2 = trial.suggest_float('beta2', 0.9, 0.999)
-            epsilon = trial.suggest_float('epsilon', 1e-8, 1e-6)
-            optimizer = optim.AdamW(model.parameters(), lr=lr, betas=(beta1, beta2), eps=epsilon, weight_decay=weight_decay)
+            optimizer = optim.SGD(
+                model.parameters(),
+                lr=lr,
+                momentum=optimizer_hyperparams['momentum'],
+                weight_decay=optimizer_hyperparams['weight_decay']
+            )
+        elif optimizer_name in ['AdamW', 'Adam']:
+            optimizer_class = optim.AdamW if optimizer_name == 'AdamW' else optim.Adam
+            optimizer = optimizer_class(
+                model.parameters(),
+                lr=lr,
+                betas=optimizer_hyperparams['betas'],
+                eps=optimizer_hyperparams['eps'],
+                weight_decay=optimizer_hyperparams['weight_decay']
+            )
         elif optimizer_name == 'RMSprop':
-            alpha = trial.suggest_float('alpha', 0.9, 0.99)
-            epsilon = trial.suggest_float('epsilon', 1e-8, 1e-6)
-            optimizer = optim.RMSprop(model.parameters(), lr=lr, alpha=alpha, eps=epsilon, weight_decay=weight_decay)
+            optimizer = optim.RMSprop(
+                model.parameters(),
+                lr=lr,
+                alpha=optimizer_hyperparams['alpha'],
+                eps=optimizer_hyperparams['eps'],
+                weight_decay=optimizer_hyperparams['weight_decay']
+            )
 
         scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
         scaler = torch.amp.GradScaler("cuda")  
 
-        wandb_config.update({
-        'optimizer_name': optimizer_name,
-        'momentum': momentum if optimizer_name == 'SGD' else None,
-        'beta1': beta1 if optimizer_name in ['AdamW', 'Adam'] else None,
-        'beta2': beta2 if optimizer_name in ['AdamW', 'Adam'] else None,
-        'epsilon': epsilon if optimizer_name in ['AdamW', 'Adam', 'RMSprop'] else None,
-        'alpha': alpha if optimizer_name == 'RMSprop' else None})
-
         # running model with this configuration
         logging.info("###############################################")
-        logging.info(f"Running model: {model_name} with Image Size: {img_size}, Batch Size: {batch_size}, LR: {lr}, Weight Decay: {weight_decay}, Gamma: {gamma}, Alpha: {alpha}")
-        logging.info(f"with optimizer setting: {optimizer_name}")
+        logging.info(f"Running model: {model_name} with Image Size: {img_size}, Batch Size: {batch_size}, LR: {lr}, Weight Decay: {weight_decay}, Gamma: {gamma}, Alpha: {alpha}, Loss Function: {loss_function}")
+        logging.info(f"Optimizer: {optimizer_name}")
         logging.info("###############################################")
 
         # ---------------------------
@@ -286,7 +363,7 @@ def objective(trial):
         # ---------------------------
         trial_best_score = -np.inf
         epochs_without_improvement = 0    
-
+        best_epoch = 0
         for epoch in range(num_epochs):
             logging.info(f"Epoch {epoch+1}/{num_epochs} - Fold {fold_idx + 1}/{n_splits}")
 
@@ -354,37 +431,39 @@ def objective(trial):
             # Log custom score
             logging.info(f"Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}, Custom Score: {custom_score:.4f}")
 
-        # ---------------------------
-        # 7. Logging Metrics to wandb
-        # ---------------------------
-        wandb.log({
-            'fold': fold_idx + 1,
-            'epoch': epoch + 1,
-            'train_loss': avg_train_loss,
-            'val_loss': avg_val_loss,
-            'custom_score': custom_score,
-            'learning_rate': scheduler.get_last_lr()[0]})
-        
+            # ---------------------------
+            # 7. Logging Metrics to wandb
+            # ---------------------------
+            wandb.log({
+                'fold': fold_idx + 1,
+                'epoch': epoch + 1,
+                'train_loss': avg_train_loss,
+                'val_loss': avg_val_loss,
+                'custom_score': custom_score,
+                'learning_rate': scheduler.get_last_lr()[0]})
+            
             # Early Stopping Logic
-        if custom_score > trial_best_score:
-            trial_best_score = custom_score
-            epochs_without_improvement = 0
-        else: 
-            epochs_without_improvement += 1
-        
-        # Check if early stopping condition is met
-        if epochs_without_improvement >= patience:
-            logging.info(f"Early stopping triggered after {patience} epochs without improvement.")
-            break
-        
-        # Optuna Trial Reporting and Pruning
-        trial.report(trial_best_score, epoch)
-        if trial.should_prune():
-            logging.info(f"Trial {trial.number} pruned at epoch {epoch+1}")
-            raise optuna.exceptions.TrialPruned()
+            if custom_score > trial_best_score:
+                best_epoch = epoch + 1
+                trial_best_score = custom_score
+                epochs_without_improvement = 0
+            else: 
+                epochs_without_improvement += 1
+            
+            # Check if early stopping condition is met
+            if epochs_without_improvement >= patience:
+                logging.info(f"Early stopping triggered after {patience} epochs without improvement.")
+                break
+            
+            # Optuna Trial Reporting and Pruning
+            trial.report(trial_best_score, epoch)
+            if trial.should_prune():
+                logging.info(f"Trial {trial.number} pruned at epoch {epoch+1}")
+                raise optuna.exceptions.TrialPruned()
         
         # Record the best score for this fold
         fold_metrics.append(trial_best_score)
+        logging.info(f"Best score for Fold {fold_idx + 1}: {trial_best_score:.4f} at epoch {best_epoch}")
 
         # Clean up
         torch.cuda.empty_cache()
@@ -405,6 +484,7 @@ def objective(trial):
         'weight_decay': weight_decay,
         'gamma': gamma,
         'alpha': alpha,
+        'loss_function': loss_function,
         'custom_score' : avg_custom_score}
 
     # Update best_custom_score if needed
