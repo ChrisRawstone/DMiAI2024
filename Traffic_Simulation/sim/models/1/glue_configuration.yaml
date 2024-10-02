@@ -4,8 +4,8 @@ intersections:
     box_system_host: '172.17.0.1'
     legs:
       - name: A1
-        lanes: [Left, Main, Main]
-        groups: [A1, A1LeftTurn]
+        lanes: [Left, Main, Main, Right]
+        groups: [A1, A1LeftTurn, A1RightTurn]
         radar: R3
         segments: ["31552319#1"]
       - name: A2
@@ -129,6 +129,15 @@ intersections:
       - index: 7
         groups: [A1LeftTurn]  
         priority: true
+      #Main_left_Hotel #2
+      - index: 8
+        groups: [A1RightTurn]  
+        priority: true
+      - index: 8
+        groups: [A1RightTurn]  
+        priority: true
+
+        
       # - index: 12
       #   groups: [A2]  
       #   priority: false
@@ -144,10 +153,10 @@ intersections:
       # - index: 16
       #   groups: [af]
       #   priority: true
-    groups: [A1, A1LeftTurn, A2, A2LeftTurn, B1, B1LeftTurn, B2, B2LeftTurn]
+    groups: [A1, A1LeftTurn, A1RightTurn,A2, A2LeftTurn, B1, B1LeftTurn, B2, B2LeftTurn]
     allowed_green_signal_combinations:
       - signal: [A1]
-        allowed: [A1LeftTurn, A2]
+        allowed: [A1LeftTurn, A2, A1RightTurn]
       - signal: [A1LeftTurn]
         allowed: [A1, A2LeftTurn]
       - signal: [A2]
