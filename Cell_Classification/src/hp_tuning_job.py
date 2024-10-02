@@ -463,9 +463,6 @@ def objective(trial):
                 best_epoch = epoch + 1
                 trial_best_loss = avg_val_loss
                 epochs_without_improvement = 0
-                # Optionally save the best model
-                torch.save(model.state_dict(), 'best_model.pth')
-                logging.info(f"Validation loss improved to {trial_best_loss:.4f}. Saving model.")
             else:
                 epochs_without_improvement += 1
                 logging.info(f"No improvement in validation loss for {epochs_without_improvement} epoch(s).")
