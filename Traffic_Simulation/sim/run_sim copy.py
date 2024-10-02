@@ -17,7 +17,7 @@ first_list = [
 ]
 
 # Define original durations in ticks for each index
-original_cycle_durations = [30, 20, 25, 20]
+original_cycle_durations = [30, 25, 25, 25]
 cycle_durations = original_cycle_durations.copy()
 ticks_per_group = 0  # Tracks how many ticks each group has been active
 
@@ -57,7 +57,7 @@ def log_results_to_file():
 # Main simulation function
 def run_game():
     test_duration_seconds = 300
-    random = False
+    random = True
     configuration_file = "models/1/glue_configuration.yaml"
     
     # Start simulation process
@@ -117,7 +117,7 @@ def run_game():
             adjustment_made = False
             # Modify the cycle reset logic to retain a portion of the adjustments
             # 70% original value and 30% adjusted value
-            cycle_durations[current_index] = int(0.9 * original_cycle_durations[current_index] + 0.1 * cycle_durations[current_index])
+            cycle_durations[current_index] = int(1 * original_cycle_durations[current_index] + 0 * cycle_durations[current_index])
 
 
         # Set signal states for the next tick

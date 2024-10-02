@@ -16,7 +16,7 @@ import pathlib
 from loguru import logger
 
 sumo_version = "sumo"
-sleep_time = 0.001
+sleep_time = 0
 
 from dtos import (
     TrafficSimulationPredictRequestDto, VehicleDto, SignalDto, LegDto, AllowedGreenSignalCombinationDto
@@ -205,6 +205,7 @@ class TrafficSimulationEnvHandler():
             score += waiting_time
 
             if waiting_time > self.delay_penalty_start_seconds:
+                # print((self.vehicle_waiting_time[vehicle] - self.delay_penalty_start_seconds)**self.delay_penalty_coefficient)
                 score += (self.vehicle_waiting_time[vehicle] - self.delay_penalty_start_seconds)**self.delay_penalty_coefficient
 
 
@@ -471,8 +472,8 @@ class TrafficSimulationEnvHandler():
             self._run_one_tick()
 
         while True:
-            # if self.simulation_ticks % 50 == 0:
-                # logger.info(f'Traffic simulation - tick {self.simulation_ticks}....')
+            if self.simulation_ticks % 50 == 0:
+                logger.info(f'Traffic simulation - tick {self.simulation_ticks}....')
                 # print('Reward: ', self._total_score)
             
             if self.simulation_ticks < (self._test_duration_seconds + self.warm_up_ticks):
