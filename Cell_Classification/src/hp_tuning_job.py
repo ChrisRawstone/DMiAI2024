@@ -363,6 +363,7 @@ def objective(trial):
         # 6. Training with Early Stopping
         # ---------------------------
         trial_best_score = -np.inf
+        trial_best_loss = float('inf') 
         epochs_without_improvement = 0    
         best_epoch = 0
         for epoch in range(num_epochs):
@@ -444,18 +445,35 @@ def objective(trial):
                 'recall_score': recall_score_val,
                 'learning_rate': scheduler.get_last_lr()[0]})
             
-            # Early Stopping Logic
-            if recall_score_val > trial_best_score:
-                best_epoch = epoch + 1
-                trial_best_score = recall_score_val
-                epochs_without_improvement = 0
-            else: 
-                epochs_without_improvement += 1
+            # # Early Stopping Logic
+            # if recall_score_val > trial_best_score:
+            #     best_epoch = epoch + 1
+            #     trial_best_score = recall_score_val
+            #     epochs_without_improvement = 0
+            # else: 
+            #     epochs_without_improvement += 1
             
-            # Check if early stopping condition is met
+            # # Check if early stopping condition is met
+            # if epochs_without_improvement >= patience:
+            #     logging.info(f"Early stopping triggered after {patience} epochs without improvement.")
+            #     break
+            
+             # Early Stopping Logic Based on Validation Loss
+            if avg_val_loss < trial_best_loss:
+                best_epoch = epoch + 1
+                trial_best_loss = avg_val_loss
+                epochs_without_improvement = 0
+                # Optionally save the best model
+                torch.save(model.state_dict(), 'best_model.pth')
+                logging.info(f"Validation loss improved to {trial_best_loss:.4f}. Saving model.")
+            else:
+                epochs_without_improvement += 1
+                logging.info(f"No improvement in validation loss for {epochs_without_improvement} epoch(s).")
+
             if epochs_without_improvement >= patience:
                 logging.info(f"Early stopping triggered after {patience} epochs without improvement.")
-                break
+                break  # Exit the training loop
+
             
             # Optuna Trial Reporting and Pruning
             trial.report(trial_best_score, epoch)
