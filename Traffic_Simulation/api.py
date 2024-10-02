@@ -9,8 +9,9 @@ from collections import defaultdict, deque
 # Adaptive timing constants
 WINDOW_SIZE = 5  # Number of ticks over which we calculate the change
 PROLONG_TICKS = 5  # Prolong the green period by 5 ticks if waiting cars decrease significantly
-REDUCE_TICKS = 15  # Reduce the green period by 15 ticks if waiting cars increase
-speed_threshold = 0.05  # Speed threshold to consider a vehicle as waiting
+REDUCE_STEP = 5  # Gradual reduction of green period
+REDUCE_TICKS = 15  # Fallback full reduction value if needed
+speed_threshold = 0.6  # Speed threshold to consider a vehicle as waiting
 
 # Logging variables for signal state durations and active group durations
 signal_state_durations = defaultdict(lambda: defaultdict(int))
@@ -80,14 +81,14 @@ def predict_endpoint(request: TrafficSimulationPredictRequestDto):
     current_time = request.simulation_ticks  # Get current tick count from request
     tick_count = current_time  # Track the current tick count
 
-    logger.info(f'Number of vehicles at tick {current_time}: {len(vehicles)}')
+    logger.info(f'\033[96mNumber of vehicles at tick {current_time}: {len(vehicles)}\033[0m')
 
     # Check if it's time to switch to the second map based on tick count and vehicle count
     if tick_count > 200:
         timetochange = True
     if timetochange:
         if len(vehicles) < VEHICLE_THRESHOLD:
-            logger.warning("Reset detected! Switching to the second signal list.")
+            logger.warning("\033[93mReset detected! Switching to the second signal list.\033[0m")
             current_map = 2
             current_list = second_list
             current_timer = second_original_timer.copy()  # Reset to second timer
@@ -108,40 +109,49 @@ def predict_endpoint(request: TrafficSimulationPredictRequestDto):
     # Store the current tick's waiting vehicle counts in history
     waiting_counts_history.append(waiting_vehicle_counts.copy())
 
-    # Log the waiting vehicle counts and their changes
+    # Log the waiting vehicle counts and their changes for all legs
     if len(waiting_counts_history) == WINDOW_SIZE:
         previous_waiting_counts = waiting_counts_history[0]  # Get waiting counts from WINDOW_SIZE ticks ago
         change_in_waiting_counts = {leg: waiting_vehicle_counts[leg] - previous_waiting_counts.get(leg, 0) for leg in waiting_vehicle_counts}
-        logger.info(f"Change in waiting vehicles for the last {WINDOW_SIZE} ticks: {change_in_waiting_counts}")
-
-        # Apply adaptive logic continuously
-        active_group_legs = current_list[current_index]
-        active_changes = [change_in_waiting_counts.get(leg, 0) for leg in active_group_legs]
-
-        # If the waiting vehicles have significantly decreased, prolong the green light
-        if all(change < -4 for change in active_changes) and not adjustment_made:
-            logger.info(f"Prolonging green period for {active_group_legs} by {PROLONG_TICKS} ticks.")
-            current_timer[current_index] += PROLONG_TICKS  # Temporarily adjust for the current cycle
-            adjustment_made = True
-
-        # If the waiting vehicles have not significantly decreased, reduce the green light
-        elif all(change > -1 for change in active_changes) and not adjustment_made:
-            logger.info(f"Reducing green period for {active_group_legs} by {REDUCE_TICKS} ticks.")
-            current_timer[current_index] = max(1, current_timer[current_index] - REDUCE_TICKS)  # Ensure it doesn't go below 1 tick
-            adjustment_made = True
+        
+        # Log the change for all legs
+        for leg, change in change_in_waiting_counts.items():
+            logger.info(f"\033[94mLeg {leg}: Change in waiting vehicles over the last {WINDOW_SIZE} ticks: {change}\033[0m")
+    else:
+        # If history is still being filled, log the current waiting counts
+        for leg, waiting_count in waiting_vehicle_counts.items():
+            logger.info(f"\033[94mLeg {leg}: Current waiting vehicles: {waiting_count}\033[0m")
 
     # Get the green light duration for the current signal group based on ticks
     green_light_duration = current_timer[current_index]
     elapsed_ticks = current_time - last_switch_tick
     remaining_ticks = green_light_duration - elapsed_ticks
 
+    # Apply adaptive logic continuously
+    active_group_legs = current_list[current_index]
+    if elapsed_ticks > 10:
+        if len(waiting_counts_history) == WINDOW_SIZE:
+            active_changes = [change_in_waiting_counts.get(leg, 0) for leg in active_group_legs]
+
+            # If the waiting vehicles have significantly decreased, prolong the green light
+            if all(change < -4 for change in active_changes) and not adjustment_made:
+                logger.info(f"\033[92mProlonging green period for {active_group_legs} by {PROLONG_TICKS} ticks.\033[0m")
+                current_timer[current_index] += PROLONG_TICKS  # Temporarily adjust for the current cycle
+                adjustment_made = True
+
+            # If the waiting vehicles have increased significantly, reduce the green light gradually
+            elif sum(active_changes) > len(active_group_legs) * 2 and not adjustment_made:  # Stricter reduction condition
+                logger.info(f"\033[91mReducing green period for {active_group_legs} by {REDUCE_STEP} ticks.\033[0m")
+                current_timer[current_index] = max(1, current_timer[current_index] - REDUCE_STEP)  # Gradual reduction
+                adjustment_made = True
+
     # Log remaining time for current signal cycle in ticks
-    logger.info(f"Remaining ticks for current signal group: {remaining_ticks} ticks")
+    logger.info(f"\033[95mRemaining ticks for current signal group: {remaining_ticks} ticks\033[0m")
 
     # Cycle through the current list based on the green light duration in ticks
     if elapsed_ticks >= green_light_duration:
         current_index = (current_index + 1) % len(current_list)  # Move to the next signal group
-        logger.info(f"Switching to signal group: {current_list[current_index]}")
+        logger.info(f"\033[93mSwitching to signal group: {current_list[current_index]}\033[0m")
         last_switch_tick = current_time  # Update the last switch tick to current time
 
         # Reset the timer to original for the next cycle
@@ -154,13 +164,13 @@ def predict_endpoint(request: TrafficSimulationPredictRequestDto):
 
     # Log if second list is used
     if current_list == second_list:
-        logger.info(f"Second list is used")
+        logger.info(f"\033[94mSecond list is used\033[0m")
     else:
-        logger.info(f"First list is used")
+        logger.info(f"\033[94mFirst list is used\033[0m")
 
     # Get the active signal group
     active_group = current_list[current_index]
-    logger.info(f"Active signal group: {active_group}")
+    logger.info(f"\033[93mActive signal group: {active_group}\033[0m")
 
     # Prepare next signals
     next_signals = []
@@ -193,10 +203,10 @@ def predict_endpoint(request: TrafficSimulationPredictRequestDto):
         # Update signal state for the next tick
         if signal.name in active_group:
             next_signals.append(SignalDto(name=signal.name, state="green"))
-            logger.info(f"Signal {signal.name} is green (in active group) with {signal_group_vehicle_counts[signal.name]} vehicles.")
+            logger.info(f"\033[92mSignal {signal.name} is green (in active group) with {signal_group_vehicle_counts[signal.name]} vehicles.\033[0m")
         else:
             next_signals.append(SignalDto(name=signal.name, state="red"))
-            logger.info(f"Signal {signal.name} is red (not in active group) with {signal_group_vehicle_counts[signal.name]} vehicles.")
+            logger.info(f"\033[91mSignal {signal.name} is red (not in active group) with {signal_group_vehicle_counts[signal.name]} vehicles.\033[0m")
 
     # Update the text file silently after each tick
     log_results_to_file(current_map)
