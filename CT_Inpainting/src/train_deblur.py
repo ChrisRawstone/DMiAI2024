@@ -53,7 +53,13 @@ def train(cfg: DictConfig):
     torch.manual_seed(seed)
     np.random.seed(seed)
     assert cfg.training_params.loss_functions[0] == "l1", "First loss function must be L1"
-    base_criterion = nn.L1Loss()   
+    base_criterion = nn.L1Loss()
+    if "perceptual" in cfg.training_params.loss_functions:
+        perceptual_loss_fn = PerceptualLoss(layers=vgg_layers).to(device)
+    # add more loss functions here if needed       
+
+
+
     # Create an instance of the UNet model with only 1 input channel,
     #  which will be the generated image from our generative model
     model = UNet(in_channels=2, out_channels=1)      
@@ -145,9 +151,18 @@ def train(cfg: DictConfig):
            
                 # Calculate loss
                 l1_loss = base_criterion(outputs, labels)
-                
-                total_loss = l1_loss
+                if "perceptual" in loss_functions:
+                    outputs_for_perceptual_loss = torch.cat([outputs, outputs, outputs], dim=1)                    
+                    labels_for_perceptual_loss = torch.cat([labels, labels, labels], dim=1)                      
 
+                    # calculate perceptual loss                       
+                    perceptual_loss = perceptual_loss_fn(outputs_for_perceptual_loss, labels_for_perceptual_loss)
+                    # combine the two losses
+                    total_loss = l1_loss + perceptual_loss_weight * perceptual_loss
+                    print(f"l1_loss: {l1_loss.item()}, perceptual_loss: {perceptual_loss.item()}")
+                else:
+                    total_loss = l1_loss               
+                
                 total_loss.backward()
                 optimizer.step()
 
@@ -167,6 +182,8 @@ def train(cfg: DictConfig):
 
         # Log the training loss to W&B
         wandb.log({"epoch": epoch + 1, "total_train_loss": total_train_loss})   
+        if "perceptual" in cfg.training_params.loss_functions:
+            wandb.log({"epoch": epoch + 1, "perceptual_loss": perceptual_loss})
        
         # Validation phase
         model.eval()
