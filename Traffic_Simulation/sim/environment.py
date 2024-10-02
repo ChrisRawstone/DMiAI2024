@@ -15,7 +15,7 @@ import pathlib
 
 from loguru import logger
 
-sleep_timer = 0.01
+sleep_timer = 0
 sumo_version = "sumo"
 
 from dtos import (
@@ -113,7 +113,7 @@ class TrafficSimulationEnvHandler():
         self._start_time = start_time
         self._test_duration_seconds = test_duration_seconds
         self._model_folder = model_folder
-        self._random = False
+        self._random = True
 
         self.maxdistance = 100
         self.groups = groups

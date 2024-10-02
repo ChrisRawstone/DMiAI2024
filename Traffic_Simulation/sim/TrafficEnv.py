@@ -44,20 +44,20 @@ class TrafficEnv(gym.Env):
         self.signal_names = [signal.name for signal in self.state.signals]
         self.num_signals = len(self.signal_names)
 
-        # Initialize signal durations
-        self.signal_durations = {signal.name: 0 for signal in self.state.signals}
-
-        # Define action space
+        # Initialize signal groups and states
         self.action_pairs = [
             ['A1', 'A1LeftTurn'],
             ['A2', 'A2LeftTurn'],
             ['B1', 'B1LeftTurn'],
             ['B2', 'B2LeftTurn']
         ]
+        self.signal_groups = {tuple(pair): SignalGroup(pair) for pair in self.action_pairs}
+        self.current_active_group = None
+
+        # Define action space
         self.action_space = spaces.Discrete(len(self.action_pairs))
 
         # Define observation space
-        # Observation: [num_cars_per_leg, num_waiting_cars_per_leg, avg_speed_per_leg] + [signal_state, signal_duration] per signal
         obs_len = (3 * self.num_legs) + (2 * self.num_signals)
         self.observation_space = spaces.Box(low=0, high=np.inf, shape=(obs_len,), dtype=np.float32)
 
@@ -65,21 +65,42 @@ class TrafficEnv(gym.Env):
         self.previous_total_score = 0.0
 
     def step(self, action):
-        # Send the action to the simulation
-        active_group = self.action_pairs[action]
+        current_tick = self.state.simulation_ticks
+
+        # Determine the selected signal group
+        selected_group = tuple(self.action_pairs[action])
+
+        # Check if we can switch to the new group
+        if self.current_active_group != selected_group:
+            can_switch = True
+            if self.current_active_group is not None:
+                # Check if minimum green time has been met for current group
+                current_group_obj = self.signal_groups[self.current_active_group]
+                can_switch = current_group_obj.can_switch(current_tick, min_green_time=10)
+
+            if can_switch:
+                # Switch to the new group
+                if self.current_active_group is not None:
+                    self.signal_groups[self.current_active_group].start_transition_to_red(current_tick)
+                self.signal_groups[selected_group].start_transition_to_green(current_tick)
+                self.current_active_group = selected_group
+
+        # Update signal groups
+        for group_obj in self.signal_groups.values():
+            group_obj.update(current_tick)
+
+        # Prepare the signal commands to send to the simulation
         next_signals = []
         for signal_name in self.signal_names:
-            if signal_name in active_group:
-                next_signals.append(SignalDto(name=signal_name, state="green"))
-            else:
-                next_signals.append(SignalDto(name=signal_name, state="red"))
+            # Determine the state of each signal
+            state = 'red'
+            for group, group_obj in self.signal_groups.items():
+                if signal_name in group:
+                    state = group_obj.get_signal_state(signal_name)
+                    break
+            next_signals.append(SignalDto(name=signal_name, state=state))
 
-        # Update signal durations and send signals to simulation
-        for signal in next_signals:
-            if signal.state == "green":
-                self.signal_durations[signal.name] += 1
-            else:
-                self.signal_durations[signal.name] = 0  # Reset duration for red signals
+        # Send the signal updates to the simulation
         self.input_queue.put({signal.name: signal.state for signal in next_signals})
 
         # Receive the next state
@@ -108,8 +129,11 @@ class TrafficEnv(gym.Env):
 
         # Terminate the existing simulation process
         if self.process.is_alive():
-            self.process.terminate()
-            self.process.join()
+            self.input_queue.put('TERMINATE')
+            self.process.join(timeout=10)
+            if self.process.is_alive():
+                self.process.terminate()
+                self.process.join()
 
         # Reset queues
         self.input_queue = Queue()
@@ -132,8 +156,9 @@ class TrafficEnv(gym.Env):
         sleep(0.2)
         self.state = self.output_queue.get()
 
-        # Reset signal durations
-        self.signal_durations = {signal.name: 0 for signal in self.state.signals}
+        # Reset signal groups
+        self.signal_groups = {tuple(pair): SignalGroup(pair) for pair in self.action_pairs}
+        self.current_active_group = None
 
         # Reset previous total score
         self.previous_total_score = 0.0
@@ -171,9 +196,16 @@ class TrafficEnv(gym.Env):
             obs.extend([num_cars, num_waiting, avg_speed])
 
         # Append signal states and durations to observation
-        for signal in self.state.signals:
-            state = 1.0 if signal.state == 'green' else 0.0
-            duration = self.signal_durations[signal.name]
+        for signal_name in self.signal_names:
+            # Determine the state and duration
+            state = 0.0  # Default to red
+            duration = 0
+            for group_obj in self.signal_groups.values():
+                if signal_name in group_obj.signals:
+                    state_str = group_obj.get_signal_state(signal_name)
+                    state = 1.0 if state_str == 'green' else 0.0
+                    duration = group_obj.state_duration
+                    break
             obs.extend([state, duration])
 
         return np.array(obs, dtype=np.float32)
@@ -185,5 +217,45 @@ class TrafficEnv(gym.Env):
     def close(self):
         # Terminate the simulation process
         if self.process.is_alive():
-            self.process.terminate()
-            self.process.join()
+            self.input_queue.put('TERMINATE')
+            self.process.join(timeout=10)
+            if self.process.is_alive():
+                self.process.terminate()
+                self.process.join()
+
+class SignalGroup:
+    def __init__(self, signals):
+        self.signals = signals  # List of signal names
+        self.state = 'red'      # Initial state
+        self.state_duration = 0
+        self.last_change_time = 0
+
+    def update(self, current_tick):
+        self.state_duration = current_tick - self.last_change_time
+        # Handle state transitions based on durations
+        if self.state == 'redamber' and self.state_duration >= 2:
+            self.state = 'green'
+            self.last_change_time = current_tick
+            self.state_duration = 0
+        elif self.state == 'amber' and self.state_duration >= 4:
+            self.state = 'red'
+            self.last_change_time = current_tick
+            self.state_duration = 0
+
+    def start_transition_to_green(self, current_tick):
+        self.state = 'redamber'
+        self.last_change_time = current_tick
+        self.state_duration = 0
+
+    def start_transition_to_red(self, current_tick):
+        self.state = 'amber'
+        self.last_change_time = current_tick
+        self.state_duration = 0
+
+    def can_switch(self, current_tick, min_green_time):
+        if self.state == 'green' and (current_tick - self.last_change_time) >= min_green_time:
+            return True
+        return False
+
+    def get_signal_state(self, signal_name):
+        return self.state
