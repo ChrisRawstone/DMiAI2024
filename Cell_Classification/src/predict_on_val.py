@@ -45,7 +45,7 @@ def main():
     args = parser.parse_args()
 
     model_checkpoint = 'checkpoints/best_model_optuna.pth'
-    model_info = 'checkpoints/model_info_optuna.json'
+    model_info = 'checkpoints/test.json'
     # model_checkpoint = 'checkpoints/best_model_2_0.263.pth'
     # model_info = 'checkpoints/best_model_2_0.263.json'
 
@@ -66,8 +66,14 @@ def main():
     print(f"Loaded model architecture: {model_info['model_name']} with image size: {img_size}\n")
 
     # Load the validation dataset
-    image_dir_val = args.image_dir
-    csv_file_path_val = args.labels_csv
+    # image_dir_val = args.image_dir
+    # csv_file_path_val = args.labels_csv
+    
+    # image_dir_val = "data/test_val"
+    # csv_file_path_val = "data/test_val.csv"
+    
+    image_dir_val = "data/validation"
+    csv_file_path_val = "data/validation.csv"
 
 
     val_transform = A.Compose([

@@ -269,6 +269,67 @@ def get_dataloaders(batch_size: int, img_size: int) -> Tuple[DataLoader, DataLoa
     return train_loader, val_loader
 
 
+def get_dataloaders_final_train(batch_size: int, img_size: int) -> Tuple[DataLoader, DataLoader]:
+    """
+    Returns DataLoader objects for training and validation datasets.
+
+    Args:
+        batch_size (int): Batch size for DataLoaders.
+        img_size (int): Image size for resizing.
+
+    Returns:
+        Tuple[DataLoader, DataLoader]: Training and validation DataLoaders.
+    """
+    # Define paths
+    train_image_dir = Path("data/training_val")
+    train_csv_path = Path("data/training_val.csv")
+    val_image_dir = Path("data/test_val")
+    val_csv_path = Path("data/test_val.csv")
+
+    # Get transforms
+    train_transform, val_transform = get_transforms(img_size)
+
+    # Create the datasets
+    train_dataset = LoadTifDataset(
+        image_dir=train_image_dir,
+        csv_file_path=train_csv_path,
+        transform=train_transform
+    )
+    val_dataset = LoadTifDataset(
+        image_dir=val_image_dir,
+        csv_file_path=val_csv_path,
+        transform=val_transform
+    )
+
+    logging.info("Datasets for training and validation have been created.")
+
+    # Extract labels from the training dataset
+    train_labels = train_dataset.labels_df.iloc[:, 1].values  # assuming labels are in the second column
+
+    # Create sampler for training
+    sampler = create_sampler(train_labels)
+
+    # Create DataLoaders
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        sampler=sampler,
+        num_workers=8,
+        pin_memory=True
+    )
+
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=8,
+        pin_memory=True
+    )
+
+    logging.info("DataLoaders for training and validation have been initialized.")
+    return train_loader, val_loader
+
+
 def get_dataloaders_train(batch_size: int, img_size: int) -> Tuple[DataLoader, DataLoader]:
     """
     Returns DataLoader objects for training and validation datasets by splitting the training data.

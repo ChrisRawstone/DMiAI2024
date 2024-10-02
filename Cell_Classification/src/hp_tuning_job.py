@@ -18,6 +18,7 @@ from sklearn.model_selection import StratifiedKFold
 from src.utils import calculate_custom_score
 from torch.utils.data import DataLoader
 from collections import Counter
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 
 wandb.login(key="c187178e0437c71d461606e312d20dc9f1c6794f")
 
@@ -156,8 +157,8 @@ def objective(trial):
             'img_size',
             [224, 400, 600, 800, 1000])
 
-    batch_size = trial.suggest_categorical('batch_size', [4, 8])
-    lr = trial.suggest_float('lr', 1e-6, 1e-2, log=True)
+    batch_size = trial.suggest_categorical('batch_size', [4, 8, 16])
+    lr = trial.suggest_float('lr', 1e-6, 1e-4, log=True)
     weight_decay = trial.suggest_float('weight_decay', 1e-6, 1e-2, log=True)
     
     gamma = trial.suggest_float('gamma', 1.0, 3.0)
@@ -228,7 +229,7 @@ def objective(trial):
         'alpha_optim': optimizer_hyperparams.get('alpha', None)})
 
     wandb.init(
-        project='Cell_Classification_Test',  # Replace with your wandb project name
+        project='Cell_Classification_HP',  # Replace with your wandb project name
         config=wandb_config,
         reinit=True,  # Allows multiple wandb runs in the same script
         name=f"trial_{trial.number}")
@@ -425,11 +426,11 @@ def objective(trial):
             # Calculate custom score
             preds_binary = (np.array(val_preds) > 0.5).astype(int)
             custom_score = calculate_custom_score(val_targets, preds_binary)
-
+            recall_score_val = recall_score(val_targets, preds_binary, zero_division=0, average='macro')
             scheduler.step()
             
             # Log custom score
-            logging.info(f"Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}, Custom Score: {custom_score:.4f}")
+            logging.info(f"Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}, Custom Score: {custom_score:.4f}, Recall Score: {recall_score_val:.4f}")
 
             # ---------------------------
             # 7. Logging Metrics to wandb
@@ -440,12 +441,13 @@ def objective(trial):
                 'train_loss': avg_train_loss,
                 'val_loss': avg_val_loss,
                 'custom_score': custom_score,
+                'recall_score': recall_score_val,
                 'learning_rate': scheduler.get_last_lr()[0]})
             
             # Early Stopping Logic
-            if custom_score > trial_best_score:
+            if recall_score_val > trial_best_score:
                 best_epoch = epoch + 1
-                trial_best_score = custom_score
+                trial_best_score = recall_score_val
                 epochs_without_improvement = 0
             else: 
                 epochs_without_improvement += 1
@@ -484,8 +486,15 @@ def objective(trial):
         'weight_decay': weight_decay,
         'gamma': gamma,
         'alpha': alpha,
+        'Optimizer': optimizer_name,
+        'momentum': optimizer_hyperparams.get('momentum', None),
+        'beta1': beta1 if optimizer_name in ['AdamW', 'Adam'] else None,
+        'beta2': beta2 if optimizer_name in ['AdamW', 'Adam'] else None,
+        'epsilon': optimizer_hyperparams.get('eps', None),
+        'alpha_optim': optimizer_hyperparams.get('alpha', None),
         'loss_function': loss_function,
-        'custom_score' : avg_custom_score}
+        'custom_score' : avg_custom_score, 
+        'recall_score': recall_score_val}
 
     # Update best_custom_score if needed
     if avg_custom_score > best_custom_score:
