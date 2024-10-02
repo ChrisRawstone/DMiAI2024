@@ -12,3 +12,4 @@ scikit-learn
 albumentations
 tqdm
 optuna
+timm

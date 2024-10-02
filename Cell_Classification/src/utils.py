@@ -15,8 +15,6 @@ import random
 # Set the desired image size (e.g., 128x128) for resizing
 IMAGE_SIZE = (224, 224)
 
-
-
 def set_seed(seed=42):
     """Set random seeds for reproducibility."""
     random.seed(seed)
@@ -90,16 +88,34 @@ def get_model(model_name, num_classes=1):
         model = vit_b_16(weights=vit_weights)
         in_features = model.heads.head.in_features
         model.heads.head = nn.Linear(in_features, num_classes)
+    elif model_name == 'ViT32':
+        from torchvision.models import vit_b_32, ViT_B_32_Weights
+        vit_weights = ViT_B_32_Weights.DEFAULT
+        model = vit_b_32(weights=vit_weights)
+        in_features = model.heads.head.in_features
+        model.heads.head = nn.Linear(in_features, num_classes)
+    elif model_name == 'ResNet101':
+        from torchvision.models import resnet101, ResNet101_Weights
+        resnet_weights = ResNet101_Weights.DEFAULT
+        model = resnet101(weights=resnet_weights)
+        in_features = model.fc.in_features
+        model.fc = nn.Linear(in_features, num_classes)
     elif model_name == 'ResNet50':
         from torchvision.models import resnet50, ResNet50_Weights
         resnet_weights = ResNet50_Weights.DEFAULT
         model = resnet50(weights=resnet_weights)
         in_features = model.fc.in_features
         model.fc = nn.Linear(in_features, num_classes)
-    elif model_name == 'EfficientNet':
+    elif model_name == 'EfficientNetB0':
         from torchvision.models import efficientnet_b0, EfficientNet_B0_Weights
         effnet_weights = EfficientNet_B0_Weights.DEFAULT
         model = efficientnet_b0(weights=effnet_weights)
+        in_features = model.classifier[1].in_features
+        model.classifier[1] = nn.Linear(in_features, num_classes)
+    elif model_name == 'EfficientNetB4':
+        from torchvision.models import efficientnet_b4, EfficientNet_B4_Weights
+        effnet_weights = EfficientNet_B4_Weights.DEFAULT
+        model = efficientnet_b4(weights=effnet_weights)
         in_features = model.classifier[1].in_features
         model.classifier[1] = nn.Linear(in_features, num_classes)
     elif model_name == 'MobileNetV3':
@@ -108,6 +124,12 @@ def get_model(model_name, num_classes=1):
         model = mobilenet_v3_large(weights=mobilenet_weights)
         in_features = model.classifier[3].in_features
         model.classifier[3] = nn.Linear(in_features, num_classes)
+    elif model_name == 'DenseNet121':
+        from torchvision.models import densenet121, DenseNet121_Weights
+        densenet_weights = DenseNet121_Weights.DEFAULT
+        model = densenet121(weights=densenet_weights)
+        in_features = model.classifier.in_features
+        model.classifier = nn.Linear(in_features, num_classes)
     else:
         raise ValueError(f"Unsupported model architecture: {model_name}")
     return model
