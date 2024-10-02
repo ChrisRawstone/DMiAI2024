@@ -281,10 +281,17 @@ def get_dataloaders_final_train(batch_size: int, img_size: int) -> Tuple[DataLoa
         Tuple[DataLoader, DataLoader]: Training and validation DataLoaders.
     """
     # Define paths
-    train_image_dir = Path("data/training_val")
-    train_csv_path = Path("data/training_val.csv")
-    val_image_dir = Path("data/test_val")
-    val_csv_path = Path("data/test_val.csv")
+    # train_image_dir = Path("data/training_val")
+    # train_csv_path = Path("data/training_val.csv")
+    
+    # val_image_dir = Path("data/test_val")
+    # val_csv_path = Path("data/test_val.csv")
+    
+    train_image_dir = Path("data/training")
+    train_csv_path = Path("data/training.csv")
+    
+    val_image_dir = Path("data/validation")
+    val_csv_path = Path("data/validation.csv")
 
     # Get transforms
     train_transform, val_transform = get_transforms(img_size)

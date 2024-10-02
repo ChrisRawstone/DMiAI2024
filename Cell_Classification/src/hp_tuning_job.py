@@ -9,7 +9,7 @@ import random
 import logging
 import gc
 from models.model import get_models, FocalLoss, get_model_parallel, LabelSmoothingLoss, BalancedBCELoss
-from data.make_dataset import LoadTifDataset, get_transforms, get_dataloaders_final_train
+from data.make_dataset import LoadTifDataset, get_transforms, get_dataloaders_final_train, create_sampler
 from tqdm import tqdm
 from threading import Lock
 import optuna
@@ -197,9 +197,11 @@ def objective(trial):
     # ---------------------------
     model_name = trial.suggest_categorical('model_name', [
         #'ViT16',"ViT32",
-                                                          'EfficientNetB0', 'EfficientNetB4', 'MobileNetV3', 'DenseNet121', 
-                                                          'ResNet101', 'ResNet18','ResNet50',
-                                                          #"SwinTransformer_B224", "SwinTransformer_B256", "SwinTransformer_L384", "SwinTransformer_H384"
+                                                          'EfficientNetB0', 'ResNet18','DenseNet121', 'ResNet50', 'ResNet18',
+                                                        #   'EfficientNetB4', 'DenseNet121', 
+                                                        #   'ResNet101', 'ResNet50',
+                                                          #"SwinTransformer_B224", "SwinTransformer_B256", "SwinTransformer_L384", "SwinTransformer_H384", 
+                                                        #    'MobileNetV3',
                                                           ])
     
     if model_name in ['ViT16', "ViT32"]:
@@ -213,13 +215,14 @@ def objective(trial):
     else:
         img_size = trial.suggest_categorical(
             'img_size',
-            [
-                #224, 400, 
-             600, 800, 1000])
+            [224, 400, 
+             600, 800
+             #, 1000
+             ])
 
-    batch_size = trial.suggest_categorical('batch_size', [4, 8, 16])
+    batch_size = trial.suggest_categorical('batch_size', [4, 8])
     lr = trial.suggest_float('lr', 1e-5, 1e-3, log=True)
-    weight_decay = trial.suggest_float('weight_decay', 1e-6, 1e-2, log=True)
+    weight_decay = trial.suggest_float('weight_decay', 1e-5, 1e-3, log=True)
     
     gamma = trial.suggest_float('gamma', 1.0, 3.0)
     alpha = trial.suggest_float('alpha', 0.1, 0.9)
@@ -252,16 +255,17 @@ def objective(trial):
         'patience': patience}
     
     # Sample optimizer hyperparameters before the fold loop
-    optimizer_name = trial.suggest_categorical('optimizer_name', ['AdamW', 'SGD', 'RMSprop'])
+    optimizer_name = trial.suggest_categorical('optimizer_name', ['AdamW', 'RMSprop'])
 
     # Add specific configurations based on the optimizer chosen
-    if optimizer_name == 'SGD':
-        momentum = trial.suggest_float('momentum', 0.8, 0.99)
-        optimizer_hyperparams = {
-            'momentum': momentum,
-            'weight_decay': weight_decay
-        }
-    elif optimizer_name in ['AdamW', 'Adam']:
+    # if optimizer_name == 'SGD':
+    #     momentum = trial.suggest_float('momentum', 0.8, 0.99)
+    #     optimizer_hyperparams = {
+    #         'momentum': momentum,
+    #         'weight_decay': weight_decay
+    #     }
+    # elif 
+    if optimizer_name in ['AdamW', 'Adam']:
         beta1 = trial.suggest_float('beta1', 0.8, 0.99)
         beta2 = trial.suggest_float('beta2', 0.9, 0.999)
         epsilon = trial.suggest_float('epsilon', 1e-8, 1e-6)
@@ -298,8 +302,11 @@ def objective(trial):
     # 3. Load Dataset and Set Up Cross-Validation
     # ---------------------------
     
-    train_image_dir = Path("data/training_val")
-    train_csv_path = Path("data/training_val.csv")
+    # train_image_dir = Path("data/training_val")
+    # train_csv_path = Path("data/training_val.csv")
+    
+    train_image_dir = Path("data/training")
+    train_csv_path = Path("data/training.csv")
 
     # Get transforms
     train_transform, val_transform = get_transforms(img_size)
@@ -342,24 +349,27 @@ def objective(trial):
         logging.info(f"Fold {fold_idx + 1}/{n_splits}")
 
         # Subset the datasets
-        train_dataset = torch.utils.data.Subset(full_dataset, train_indices)
-        val_dataset = torch.utils.data.Subset(full_dataset, val_indices)
+        train_subset = torch.utils.data.Subset(full_dataset, train_indices)
+        val_subset = torch.utils.data.Subset(full_dataset, val_indices)
 
         # Set transforms for each subset
-        train_dataset.dataset.transform = train_transform
-        val_dataset.dataset.transform = val_transform
-
+        train_subset.dataset.transform = train_transform
+        val_subset.dataset.transform = val_transform
+        
+        train_labels = train_subset.dataset.labels_df.iloc[train_indices, 1].values.astype(int)
+        train_sampler = create_sampler(train_labels)
+        
         # Create DataLoaders
         train_loader = DataLoader(
-            train_dataset,
+            train_subset,
             batch_size=batch_size,
-            shuffle=True, 
+            sampler=train_sampler,
             num_workers=8,
             pin_memory=True
         )
 
         val_loader = DataLoader(
-            val_dataset,
+            val_subset,
             batch_size=batch_size,
             shuffle=False,
             num_workers=8,
@@ -449,9 +459,10 @@ def objective(trial):
             scheduler.step()
             
             # Log  score
-            logging.info(f"Custom Score Train: {custom_score_train:.4f}, Recall Score Train: {recall_score_train:.4f}")
-            logging.info(f"Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}, Custom Score: {custom_score:.4f}, Recall Score: {recall_score_val:.4f}")
-            logging.info(f"Test Loss: {avg_test_loss:.4f}, Custom Score: {cutstom_score_test:.4f}, Recall Score: {recall_score_test:.4f}")
+            logging.info(f"Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}")
+            logging.info(f"Custom Score TRAIN: {custom_score_train:.4f}, Recall Score Train: {recall_score_train:.4f}")
+            logging.info(f"Custom Score VAL : {custom_score:.4f}, Recall Score: {recall_score_val:.4f}")
+            logging.info(f"Custom Score TEST: {cutstom_score_test:.4f}, Recall Score: {recall_score_test:.4f}")
 
             # ---------------------------
             # 7. Logging Metrics to wandb
@@ -465,8 +476,8 @@ def objective(trial):
                 'recall_score': recall_score_val,
                 'learning_rate': scheduler.get_last_lr()[0]})
             
-            if recall_score_val > trial_best_score:
-                trial_best_score = recall_score_val
+            if custom_score > trial_best_score:
+                trial_best_score = custom_score
 
             
              # Early Stopping Logic Based on Validation Loss
