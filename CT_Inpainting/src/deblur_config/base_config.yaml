@@ -1,0 +1,25 @@
+debug: False
+
+wandb:
+  project: deblur
+  api_key: c187178e0437c71d461606e312d20dc9f1c6794f
+  
+training_params:  
+  seed: 42
+  num_epochs: 100
+  learning_rate: 0.0001
+  batch_size: 4
+  gen_model_dir: CT_Inpainting/models/2024-10-01/21-25-34
+  loss_functions: ['l1'] # ['l1', 'perceptual']
+  vgg_layers: cfg.training_params.vgg_layers
+  perceptual_loss_weight: = cfg.training_params.perceptual_loss_weight       
+  clamp_output: True # if true we clamp the output to [0, 1]
+  use_scheduler: False # if true we use a scheduler we use a scheduler
+
+hydra:
+  run:
+    dir: CT_Inpainting/deblur_models/${now:%Y-%m-%d}/${now:%H-%M-%S}
+
+
+
+
