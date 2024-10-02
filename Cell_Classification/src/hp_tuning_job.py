@@ -445,11 +445,8 @@ def objective(trial):
                 'recall_score': recall_score_val,
                 'learning_rate': scheduler.get_last_lr()[0]})
             
-            # # Early Stopping Logic
-            # if recall_score_val > trial_best_score:
-            #     best_epoch = epoch + 1
-            #     trial_best_score = recall_score_val
-            #     epochs_without_improvement = 0
+            if recall_score_val > trial_best_score:
+                trial_best_score = recall_score_val
             # else: 
             #     epochs_without_improvement += 1
             
