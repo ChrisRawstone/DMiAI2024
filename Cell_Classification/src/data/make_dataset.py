@@ -295,6 +295,13 @@ def get_dataloaders_final_train(batch_size: int, img_size: int) -> Tuple[DataLoa
         csv_file_path=train_csv_path,
         transform=train_transform
     )
+    
+    train_dataset_eval = LoadTifDataset(
+        image_dir=train_image_dir,
+        csv_file_path=train_csv_path,
+        transform=val_transform
+    )
+    
     val_dataset = LoadTifDataset(
         image_dir=val_image_dir,
         csv_file_path=val_csv_path,
@@ -317,6 +324,14 @@ def get_dataloaders_final_train(batch_size: int, img_size: int) -> Tuple[DataLoa
         num_workers=8,
         pin_memory=True
     )
+    
+    train_loader_eval = DataLoader(
+        train_dataset_eval,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=8,
+        pin_memory=True
+    )
 
     val_loader = DataLoader(
         val_dataset,
@@ -327,7 +342,7 @@ def get_dataloaders_final_train(batch_size: int, img_size: int) -> Tuple[DataLoa
     )
 
     logging.info("DataLoaders for training and validation have been initialized.")
-    return train_loader, val_loader
+    return train_loader, val_loader, train_loader_eval
 
 
 def get_dataloaders_train(batch_size: int, img_size: int) -> Tuple[DataLoader, DataLoader]:

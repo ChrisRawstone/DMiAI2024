@@ -9,7 +9,7 @@ import random
 import logging
 import gc
 from models.model import get_models, FocalLoss, get_model_parallel, LabelSmoothingLoss, BalancedBCELoss
-from data.make_dataset import LoadTifDataset, get_transforms
+from data.make_dataset import LoadTifDataset, get_transforms, get_dataloaders_final_train
 from tqdm import tqdm
 from threading import Lock
 import optuna
@@ -18,7 +18,7 @@ from sklearn.model_selection import StratifiedKFold
 from src.utils import calculate_custom_score
 from torch.utils.data import DataLoader
 from collections import Counter
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+from sklearn.metrics import recall_score
 
 wandb.login(key="c187178e0437c71d461606e312d20dc9f1c6794f")
 
@@ -64,7 +64,7 @@ os.makedirs('logs', exist_ok=True)
 ## 2. Objective Function for Optuna
 # =============================================================================================
 
-NUM_EPOCHS = 100
+NUM_EPOCHS = 50
 PATIENCE_EPOCHS = 10
 
 # Initialize global variables for top 5 trials and overall best
@@ -115,16 +115,73 @@ def update_top_5(trial_number, custom_score, model, model_info):
 global best_custom_score
 best_custom_score = 0
 
+
+# Define the training loop
+def train_loop(model, criterion, optimizer, scaler, train_loader, device):
+    model.train()
+    train_loss = 0
+    train_preds = []
+    train_targets = []
+
+    progress_bar = tqdm(train_loader, desc='Training', leave=False)
+    for images, labels in progress_bar:
+        images = images.to(device, non_blocking=True)
+        labels = labels.float().unsqueeze(1).to(device, non_blocking=True)
+
+        optimizer.zero_grad()
+
+        with torch.amp.autocast('cuda'):  # Mixed precision
+            outputs = model(images)
+            loss = criterion(outputs, labels)
+
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
+
+        train_loss += loss.item() * images.size(0)
+
+        preds = torch.sigmoid(outputs).detach().cpu().numpy()
+        train_preds.extend(preds)
+        train_targets.extend(labels.detach().cpu().numpy())
+
+        progress_bar.set_postfix({'Loss': loss.item()})
+
+    avg_train_loss = train_loss / len(train_loader.dataset)
+    return avg_train_loss, train_preds, train_targets
+
+# Define the evaluation loop
+def eval_loop(model, criterion, val_loader, device):
+    model.eval()
+    val_loss = 0
+    val_preds = []
+    val_targets = []
+
+    with torch.no_grad():  
+        progress_bar = tqdm(val_loader, desc='Validation', leave=False)
+        for images, labels in progress_bar:
+            images = images.to(device, non_blocking=True)
+            labels = labels.float().unsqueeze(1).to(device, non_blocking=True)
+
+            with torch.amp.autocast('cuda'):  # Mixed precision
+                outputs = model(images)
+                loss = criterion(outputs, labels)
+
+            val_loss += loss.item() * images.size(0)
+
+            preds = torch.sigmoid(outputs).detach().cpu().numpy()
+            val_preds.extend(preds)
+            val_targets.extend(labels.detach().cpu().numpy())
+
+    avg_val_loss = val_loss / len(val_loader.dataset)
+    return avg_val_loss, val_preds, val_targets
+
+def calc_perf_metrics(preds, targets):
+    preds_binary = (np.array(preds) > 0.5).astype(int)
+    custom_score = calculate_custom_score(targets, preds_binary)
+    recall_score_val = recall_score(targets, preds_binary, zero_division=0, average='macro')
+    return custom_score, recall_score_val
+
 def objective(trial):
-    """
-    Objective function for Optuna hyperparameter optimization with wandb integration and early stopping.
-
-    Args:
-        trial (optuna.trial.Trial): Optuna trial object.
-
-    Returns:
-        float: Validation custom score to maximize.
-    """
     seed = trial.number
     random.seed(seed)
     np.random.seed(seed)
@@ -138,10 +195,11 @@ def objective(trial):
     # ---------------------------
     # 1. Hyperparameter Sampling
     # ---------------------------
-    model_name = trial.suggest_categorical('model_name', ['ViT16',"ViT32",
+    model_name = trial.suggest_categorical('model_name', [
+        #'ViT16',"ViT32",
                                                           'EfficientNetB0', 'EfficientNetB4', 'MobileNetV3', 'DenseNet121', 
                                                           'ResNet101', 'ResNet18','ResNet50',
-                                                          "SwinTransformer_B224", "SwinTransformer_B256", "SwinTransformer_L384", "SwinTransformer_H384"
+                                                          #"SwinTransformer_B224", "SwinTransformer_B256", "SwinTransformer_L384", "SwinTransformer_H384"
                                                           ])
     
     if model_name in ['ViT16', "ViT32"]:
@@ -155,7 +213,9 @@ def objective(trial):
     else:
         img_size = trial.suggest_categorical(
             'img_size',
-            [224, 400, 600, 800, 1000])
+            [
+                #224, 400, 
+             600, 800, 1000])
 
     batch_size = trial.suggest_categorical('batch_size', [4, 8, 16])
     lr = trial.suggest_float('lr', 1e-5, 1e-3, log=True)
@@ -243,6 +303,9 @@ def objective(trial):
 
     # Get transforms
     train_transform, val_transform = get_transforms(img_size)
+    
+    # Get test set to sanity check
+    _, test_loader, _ = get_dataloaders_final_train(batch_size, img_size)
 
     # Create the full dataset
     full_dataset = LoadTifDataset(
@@ -290,7 +353,7 @@ def objective(trial):
         train_loader = DataLoader(
             train_dataset,
             batch_size=batch_size,
-            shuffle=True,  # Shuffle is okay here since sampler is not used
+            shuffle=True, 
             num_workers=8,
             pin_memory=True
         )
@@ -370,68 +433,25 @@ def objective(trial):
             logging.info(f"Epoch {epoch+1}/{num_epochs} - Fold {fold_idx + 1}/{n_splits}")
 
             # Training Phase
-            model.train()
-            train_loss = 0
-            train_preds = []
-            train_targets = []
-
-            progress_bar = tqdm(train_loader, desc=f'Training Epoch {epoch+1}', leave=False)
-            for images, labels in progress_bar:
-                images = images.to(device, non_blocking=True)
-                labels = labels.float().unsqueeze(1).to(device, non_blocking=True)
-
-                optimizer.zero_grad()
-
-                with torch.amp.autocast("cuda"):  # Mixed precision
-                    outputs = model(images)
-                    loss = criterion(outputs, labels)
-
-                scaler.scale(loss).backward()
-                scaler.step(optimizer)
-                scaler.update()
-
-                train_loss += loss.item() * images.size(0)
-
-                preds = torch.sigmoid(outputs).detach().cpu().numpy()
-                train_preds.extend(preds)
-                train_targets.extend(labels.detach().cpu().numpy())
-
-                progress_bar.set_postfix({'Loss': loss.item()})
-
-            avg_train_loss = train_loss / len(train_loader.dataset)
-
+            avg_train_loss, train_preds, train_targets = train_loop(model, criterion, optimizer, scaler, train_loader, device)
+           
             # Validation Phase
-            model.eval()
-            val_loss = 0
-            val_preds = []
-            val_targets = []
-
-            with torch.no_grad():
-                progress_bar = tqdm(val_loader, desc='Validation', leave=False)
-                for images, labels in progress_bar:
-                    images = images.to(device, non_blocking=True)
-                    labels = labels.float().unsqueeze(1).to(device, non_blocking=True)
-
-                    with torch.amp.autocast("cuda"):  # Mixed precision
-                        outputs = model(images)
-                        loss = criterion(outputs, labels)
-
-                    val_loss += loss.item() * images.size(0)
-
-                    preds = torch.sigmoid(outputs).detach().cpu().numpy()
-                    val_preds.extend(preds)
-                    val_targets.extend(labels.detach().cpu().numpy())
-
-            avg_val_loss = val_loss / len(val_loader.dataset)
-
-            # Calculate custom score
-            preds_binary = (np.array(val_preds) > 0.5).astype(int)
-            custom_score = calculate_custom_score(val_targets, preds_binary)
-            recall_score_val = recall_score(val_targets, preds_binary, zero_division=0, average='macro')
+            avg_val_loss, val_preds, val_targets = eval_loop(model, criterion, val_loader, device)
+            
+            # Test Phase
+            avg_test_loss, test_preds, test_targets = eval_loop(model, criterion, test_loader, device)
+            
+            # Calculate performance
+            custom_score_train, recall_score_train = calc_perf_metrics(train_preds, train_targets)
+            custom_score, recall_score_val = calc_perf_metrics(val_preds, val_targets)
+            cutstom_score_test, recall_score_test = calc_perf_metrics(test_preds, test_targets)
+            
             scheduler.step()
             
-            # Log custom score
+            # Log  score
+            logging.info(f"Custom Score Train: {custom_score_train:.4f}, Recall Score Train: {recall_score_train:.4f}")
             logging.info(f"Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}, Custom Score: {custom_score:.4f}, Recall Score: {recall_score_val:.4f}")
+            logging.info(f"Test Loss: {avg_test_loss:.4f}, Custom Score: {cutstom_score_test:.4f}, Recall Score: {recall_score_test:.4f}")
 
             # ---------------------------
             # 7. Logging Metrics to wandb
@@ -447,13 +467,7 @@ def objective(trial):
             
             if recall_score_val > trial_best_score:
                 trial_best_score = recall_score_val
-            # else: 
-            #     epochs_without_improvement += 1
-            
-            # # Check if early stopping condition is met
-            # if epochs_without_improvement >= patience:
-            #     logging.info(f"Early stopping triggered after {patience} epochs without improvement.")
-            #     break
+
             
              # Early Stopping Logic Based on Validation Loss
             if avg_val_loss < trial_best_loss:
@@ -468,13 +482,12 @@ def objective(trial):
                 logging.info(f"Early stopping triggered after {patience} epochs without improvement.")
                 break  # Exit the training loop
 
-            
             # Optuna Trial Reporting and Pruning
             trial.report(trial_best_score, epoch)
             if trial.should_prune():
                 logging.info(f"Trial {trial.number} pruned at epoch {epoch+1}")
                 raise optuna.exceptions.TrialPruned()
-        
+            
         # Record the best score for this fold
         fold_metrics.append(trial_best_score)
         logging.info(f"Best score for Fold {fold_idx + 1}: {trial_best_score:.4f} at epoch {best_epoch}")

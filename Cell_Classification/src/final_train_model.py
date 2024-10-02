@@ -9,7 +9,7 @@ import logging
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from tqdm import tqdm
 from collections import Counter
-from data.make_dataset import get_dataloaders_final_train, LoadTifDataset
+from data.make_dataset import get_dataloaders_final_train, LoadTifDataset, get_dataloaders
 from src.utils import calculate_custom_score
 from models.model import FocalLoss, LabelSmoothingLoss, BalancedBCELoss, get_model_parallel
 from utils import get_model
@@ -243,11 +243,13 @@ def evaluate_model(model, val_loader, device):
 
     ground_truths = np.array(val_targets)
     predictions = np.array(preds_binary)
-
+    
+    # print(ground_truths)
+    # print(predictions)
     # Compute evaluation metrics
     accuracy = accuracy_score(ground_truths, predictions)
     precision = precision_score(ground_truths, predictions, zero_division=0)
-    recall = recall_score(ground_truths, predictions, zero_division=0)
+    recall = recall_score(ground_truths, predictions, zero_division=0, average='macro')
     f1 = f1_score(ground_truths, predictions, zero_division=0)
 
     print("\nEvaluation Metrics:")
@@ -260,10 +262,23 @@ def evaluate_model(model, val_loader, device):
 
 if __name__ == "__main__":
     
-    model, img_size, batch_size, lr, weight_decay, gamma, alpha, model_name, num_epochs, loss_function, optimizer_name, momentum, beta1, beta2, epsilon, alpha_optim = load_model_and_info('checkpoints/model_info_optuna.json')
+    model, img_size, batch_size, lr, weight_decay, gamma, alpha, model_name, num_epochs, loss_function, optimizer_name, momentum, beta1, beta2, epsilon, alpha_optim = load_model_and_info('checkpoints/model_info_optuna_2.json')
     
-    model, val_loader = train_model(model, img_size, batch_size, lr, weight_decay, gamma, alpha, model_name, num_epochs, loss_function, optimizer_name, momentum, beta1, beta2, epsilon, alpha_optim, device)
+    # model, val_loader = train_model(model, img_size, batch_size, lr, weight_decay, gamma, alpha, model_name, num_epochs, loss_function, optimizer_name, momentum, beta1, beta2, epsilon, alpha_optim, device)
+    train_loader, val_loader, train_loader_eval = get_dataloaders_final_train(batch_size, img_size)
+    model = get_model(model_name, num_classes=1)
+    checkpoint = torch.load('models/final_trained_model.pth', map_location=device, weights_only=True)
+    model.load_state_dict(checkpoint)
+    model.to(device)
     
+    print('on test')
     evaluate_model(model, val_loader, device)
+    
+    print('on training val')
+    evaluate_model(model, train_loader_eval, device)
+    
+    print('on validation')
+    _, val_data = get_dataloaders(batch_size, img_size)
+    evaluate_model(model, val_data, device)
 
 

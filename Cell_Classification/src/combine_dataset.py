@@ -67,7 +67,7 @@ labels = df['is_homogenous']
 
 # Stratified split
 train_ids, test_ids, y_train, y_test = train_test_split(
-    image_ids, labels, test_size=0.2, random_state=42, stratify=labels
+    image_ids, labels, test_size=0.3, random_state=42, stratify=labels
 )
 
 # Function to copy and rename images
