@@ -50,6 +50,7 @@ def train(cfg: DictConfig):
     only_score_within_mask = cfg.training_params.only_score_within_mask
     clamp_output = cfg.training_params.clamp_output
     use_scheduler = cfg.training_params.use_scheduler
+    proportion_to_leave_unchanged = cfg.training_params.proportion_to_leave_unchanged
     # check if training_params.use_attention is in the config
     if "use_attention" in cfg.training_params:
         use_attention = cfg.training_params.use_attention
@@ -139,17 +140,21 @@ def train(cfg: DictConfig):
     ])
 
     # Prepare the dataset and dataloaders
+    # dont pass portion to leave unchanged here, since we want to use the same dataset for training and validation
     dataset = BaseClass(data_dir=data_dir, transform=transform, crop_mask=crop_mask)
 
 
     # Split dataset into training and validation sets
     train_size = int(train_size_proportion * len(dataset))
     val_size = len(dataset) - train_size
-    
+
+    # if true, use small dataset for testing/debug
+    if debug:
+        train_size_proportion = 0.01
 
     # split the dataset into training and validation sets usng our custom split_data method if augmentations
     
-    train_dataset,val_dataset =dataset.split_data(output_dir, train_size=train_size_proportion, val_size=1-train_size_proportion, seed=seed, augmentations=augmentations)
+    train_dataset,val_dataset =dataset.split_data(output_dir, train_size=train_size_proportion, val_size=1-train_size_proportion, seed=seed, augmentations=augmentations, proportion_to_leave_unchanged=proportion_to_leave_unchanged)
     
     
     # if true, use small dataset for testing/debug

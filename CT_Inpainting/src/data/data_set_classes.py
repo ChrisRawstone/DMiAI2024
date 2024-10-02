@@ -19,7 +19,7 @@ import shutil
 
 #base class for both classifier and inpainting
 class BaseClass(Dataset):
-    def __init__(self, data_dir, transform=None, dirs= ['corrupted', 'mask', 'tissue', 'vertebrae', 'ct'], desired_input = ['corrupted', 'mask', 'tissue', 'vertebrae'], desired_output = ['ct'],crop_mask=False):
+    def __init__(self, data_dir, transform=None, dirs= ['corrupted', 'mask', 'tissue', 'vertebrae', 'ct'], desired_input = ['corrupted', 'mask', 'tissue', 'vertebrae'], desired_output = ['ct'],crop_mask=False,proportion_to_leave_unchanged=0.0):
         if transform is None:
             assert False, "Transform is required"
         self.data_dir = data_dir
@@ -35,6 +35,19 @@ class BaseClass(Dataset):
         # Get list of corrupted images
         self.identifers = self.get_stripped_filename(sorted(os.listdir(getattr(self, dirs[0] + '_dir'))))
         self.transform = transform
+
+        # if we want to leave some images unchanged
+        if proportion_to_leave_unchanged > 0.0:
+            # generate a random list of indices to leave unchanged
+            num_to_leave_unchanged = int(len(self.identifers) * proportion_to_leave_unchanged)
+            indices_to_leave_unchanged = np.random.choice(len(self.identifers), num_to_leave_unchanged, replace=False)
+            # get the identifiers to leave unchanged as dict
+            file_names_that_are_unchanged = {self.identifers[i]: i for i in indices_to_leave_unchanged}
+            self.file_names_that_are_unchanged = file_names_that_are_unchanged
+
+        
+
+
     
     def get_stripped_filename(self, filenames):
         # check if filenames are in the format corrupted_000_1.png or just corrupted_0.png
@@ -49,11 +62,17 @@ class BaseClass(Dataset):
     
     def __getitem__(self, idx):
         # Get the filename
-        filename = self.identifers[idx]  # e.g., '000_1'
+        filename = self.identifers[idx]  # e.g., '000_1' 
+       
         # Construct file paths
         path_to_files = {f"{dir}_path": os.path.join(getattr(self, dir + '_dir'), dir + '_' + filename + '.png') for dir in self.dirs}
         # change vertebrate path to .txt
-        
+        # first check if self.file_names_that_are_unchanged exists
+        if hasattr(self, 'file_names_that_are_unchanged'):
+            if filename in self.file_names_that_are_unchanged:
+                # in path_to_files change the corrupted path to the unchanged path
+                path_to_files['corrupted_path'] = path_to_files['ct_path']                
+                
         if 'vertebrae' in self.dirs:
             path_to_files['vertebrae_path'] = path_to_files['vertebrae_path'].replace('.png', '.txt')
        
@@ -87,7 +106,7 @@ class BaseClass(Dataset):
         
         return input_tensor, output_tensor
  
-    def split_data(self,hydra_output_dir, train_size=0.8, val_size=0.2,augmentations = [], seed=None):
+    def split_data(self,hydra_output_dir, train_size=0.8, val_size=0.2,augmentations = [], seed=None,proportion_to_leave_unchanged=0.0):
         """
         Split the data into training and validation sets
         Creates a new folder in the hydra output directory with the split data
@@ -183,7 +202,7 @@ class BaseClass(Dataset):
         print(f"Data split and saved in {hydra_output_dir}")
 
         # Create new instances of the BaseClass class with the split data
-        train_dataset = BaseClass(train_data_dir, transform=self.transform, dirs=self.dirs, desired_input=self.desired_input, desired_output=self.desired_output, crop_mask=self.crop_mask)
+        train_dataset = BaseClass(train_data_dir, transform=self.transform, dirs=self.dirs, desired_input=self.desired_input, desired_output=self.desired_output, crop_mask=self.crop_mask, proportion_to_leave_unchanged=proportion_to_leave_unchanged)
         val_dataset = BaseClass(val_data_dir, transform=self.transform, dirs=self.dirs, desired_input=self.desired_input, desired_output=self.desired_output, crop_mask=self.crop_mask)
 
         return train_dataset, val_dataset
