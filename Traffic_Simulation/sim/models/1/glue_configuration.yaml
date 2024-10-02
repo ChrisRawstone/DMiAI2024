@@ -5,7 +5,7 @@ intersections:
     legs:
       - name: A1
         lanes: [Left, Main, Main, Right]
-        groups: [A1, A1LeftTurn, A1RightTurn]
+        groups: [A1RightTurn, A1, A1LeftTurn]
         radar: R3
         segments: ["31552319#1"]
       - name: A2
@@ -133,7 +133,7 @@ intersections:
       - index: 8
         groups: [A1RightTurn]  
         priority: true
-      - index: 8
+      - index: 9
         groups: [A1RightTurn]  
         priority: true
 
