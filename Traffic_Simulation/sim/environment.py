@@ -471,8 +471,9 @@ class TrafficSimulationEnvHandler():
             self._run_one_tick()
 
         while True:
-            if self.simulation_ticks % 100 == 0:
+            if self.simulation_ticks % 50 == 0:
                 logger.info(f'Traffic simulation - tick {self.simulation_ticks}....')
+                print('Reward: ', self._total_score)
             
             if self.simulation_ticks < (self._test_duration_seconds + self.warm_up_ticks):
                 self._run_one_tick()
@@ -480,6 +481,8 @@ class TrafficSimulationEnvHandler():
             else:
                 self._run_one_tick(terminates_now=True)
                 break
+            
+            
 
         self._traci_connection.close()
         self._simulation_is_running = False
