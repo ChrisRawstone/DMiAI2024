@@ -158,7 +158,7 @@ def objective(trial):
             [224, 400, 600, 800, 1000])
 
     batch_size = trial.suggest_categorical('batch_size', [4, 8, 16])
-    lr = trial.suggest_float('lr', 1e-6, 1e-4, log=True)
+    lr = trial.suggest_float('lr', 1e-5, 1e-3, log=True)
     weight_decay = trial.suggest_float('weight_decay', 1e-6, 1e-2, log=True)
     
     gamma = trial.suggest_float('gamma', 1.0, 3.0)
