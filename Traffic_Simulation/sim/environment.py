@@ -15,6 +15,9 @@ import pathlib
 
 from loguru import logger
 
+sleep_timer = 0.01
+sumo_version = "sumo"
+
 from dtos import (
     TrafficSimulationPredictRequestDto, VehicleDto, SignalDto, LegDto, AllowedGreenSignalCombinationDto
 )
@@ -371,7 +374,7 @@ class TrafficSimulationEnvHandler():
         return observed_vehicles
 
     def demo(self):
-        sumoBinary = checkBinary('sumo')
+        sumoBinary = checkBinary(sumo_version)
 
         logger.info('Traffic simulation - starting sumo....')
 
@@ -450,7 +453,7 @@ class TrafficSimulationEnvHandler():
         self._simulation_is_running = True
 
         logger.info('Traffic simulation - starting sumo....')
-        sumoBinary = checkBinary('sumo')
+        sumoBinary = checkBinary(sumo_version)
 
         sim_instance = uuid4().hex
 
@@ -468,14 +471,17 @@ class TrafficSimulationEnvHandler():
             self._run_one_tick()
 
         while True:
-            logger.info(f'Traffic simulation - tick {self.simulation_ticks}....')
+            if self.simulation_ticks % 100 == 0:
+                logger.info(f'Traffic simulation - tick {self.simulation_ticks}....')
             
             if self.simulation_ticks < (self._test_duration_seconds + self.warm_up_ticks):
                 self._run_one_tick()
-                sleep(1)
+                sleep(sleep_timer)
             else:
                 self._run_one_tick(terminates_now=True)
                 break
+        logger.info('Traffic simulation - finished....')
+        logger.info(f'Reward: {self._total_score}')
 
         self._traci_connection.close()
         self._simulation_is_running = False
