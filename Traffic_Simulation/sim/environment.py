@@ -16,7 +16,7 @@ import pathlib
 from loguru import logger
 
 sumo_version = "sumo"
-sleep_time = 0
+sleep_time = 0.001
 
 from dtos import (
     TrafficSimulationPredictRequestDto, VehicleDto, SignalDto, LegDto, AllowedGreenSignalCombinationDto
@@ -376,7 +376,7 @@ class TrafficSimulationEnvHandler():
     def demo(self):
         sumoBinary = checkBinary('sumo')
 
-        logger.info('Traffic simulation - starting sumo....')
+        # logger.info('Traffic simulation - starting sumo....')
 
         sim_instance = uuid4().hex
 
@@ -394,7 +394,7 @@ class TrafficSimulationEnvHandler():
         for i in range(simulationTicks):
             self._run_one_tick()
 
-        logger.info('Traffic simulation - finished....')
+        # logger.info('Traffic simulation - finished....')
 
         self._traci_connection.close()
 
@@ -452,7 +452,7 @@ class TrafficSimulationEnvHandler():
 
         self._simulation_is_running = True
 
-        logger.info('Traffic simulation - starting sumo....')
+        # logger.info('Traffic simulation - starting sumo....')
         sumoBinary = checkBinary(sumo_version)
 
         sim_instance = uuid4().hex
@@ -471,9 +471,9 @@ class TrafficSimulationEnvHandler():
             self._run_one_tick()
 
         while True:
-            if self.simulation_ticks % 50 == 0:
-                logger.info(f'Traffic simulation - tick {self.simulation_ticks}....')
-                print('Reward: ', self._total_score)
+            # if self.simulation_ticks % 50 == 0:
+                # logger.info(f'Traffic simulation - tick {self.simulation_ticks}....')
+                # print('Reward: ', self._total_score)
             
             if self.simulation_ticks < (self._test_duration_seconds + self.warm_up_ticks):
                 self._run_one_tick()
