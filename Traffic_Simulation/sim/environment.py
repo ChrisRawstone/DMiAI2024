@@ -15,8 +15,8 @@ import pathlib
 
 from loguru import logger
 
-sumo_version = "sumo"
-sleep_time = 0
+sumo_version = "sumo-gui"
+sleep_time = 0.1
 
 from dtos import (
     TrafficSimulationPredictRequestDto, VehicleDto, SignalDto, LegDto, AllowedGreenSignalCombinationDto

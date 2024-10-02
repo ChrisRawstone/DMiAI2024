@@ -9,8 +9,8 @@ intersections:
         radar: R3
         segments: ["31552319#1"]
       - name: A2
-        lanes: [Left, Main, Main]
-        groups: [A2, A2LeftTurn]
+        lanes: [Left, Main, Right]
+        groups: [A2, A2LeftTurn, A1RightTurn]
         radar: R1
         segments: ["661830501", "661949705#2", "661949705#1"]
       - name: B1
