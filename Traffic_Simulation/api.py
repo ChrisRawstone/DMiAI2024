@@ -18,6 +18,8 @@ from multiprocessing import Queue
 #     compute_pareto_solution
 # )
 
+
+
 def extract_data_for_optimization(request: TrafficSimulationPredictRequestDto):
     """Extracts all vehicle speeds, distances, and assigns a small positive acceleration per leg.
     
@@ -38,6 +40,117 @@ def extract_data_for_optimization(request: TrafficSimulationPredictRequestDto):
         leg_data[leg_name]['distances'].append(vehicle.distance_to_stop)
 
     return leg_data
+
+
+def estimate_acceleration_by_distance(speed, distance, current_phase, phase):  
+    
+    if speed == 0:
+        return 0
+    
+    elif current_phase == phase:
+        return 2.6
+    elif current_phase != phase:
+        return -4.6
+    
+   
+def estimate_queue_length(leg_data, vth, dth):
+    
+    car_speeds = leg_data['speeds']
+    car_distances = leg_data['distances']
+    
+    return sum(1 for v, d in zip(car_speeds, car_distances) if v < vth and d < dth)
+
+def estimate_arrivals(leg_data, delta_t, current_phase, phase):
+   
+    speeds = leg_data['speeds']  # List of vehicle speeds in leg l
+    distances = leg_data['distances']  # List of vehicle distances to stop line in leg l
+    #accelerations = [estimate_acceleration_by_distance(d_i, v_i) for v_i, d_i in zip(speeds, distances)]
+    accelerations = [estimate_acceleration_by_distance(speed, distance, current_phase, phase) for speed, distance in zip(speeds, distances)]
+    #accelerations = [2.6] * len(speeds) if current_phase == phase else [-4.6]*len(speeds)
+    
+    arrivals = []
+    for v_i, a_i in zip(speeds, accelerations):
+        if a_i == 0:
+            a_i = 0.01  # Avoid division by zero
+        arrivals.append(np.sign(max(0, delta_t - v_i / a_i)))  # Sign function based on time to stop
+
+    A_l = sum(arrivals)
+    
+    return A_l
+
+def estimate_departures(leg_data, delta_t, saturation_flow_rate, current_phase_condition, yellow_time, current_phase, phase):
+   
+    # Condition c1: Use saturation flow rate
+    if current_phase_condition == 'c1':
+        return saturation_flow_rate * delta_t
+    
+    # Condition c2: The next phase to be green
+    elif current_phase_condition == 'c2':
+        speeds = leg_data['speeds']
+        distances = leg_data['distances']
+        #accelerations = [estimate_acceleration_by_distance(d_i, v_i) for v_i, d_i in zip(speeds, distances)]
+        #accelerations = [2.6] * len(speeds) if current_phase == phase else [-4.6]*len(speeds)
+        accelerations = [estimate_acceleration_by_distance(speed, distance, current_phase, phase) for speed, distance in zip(speeds, distances)]
+
+        # Compute ΔL for each vehicle in the leg
+        departures = []
+        for v_i, d_i, a_i in zip(speeds, distances, accelerations):
+            delta_L = v_i * (delta_t - yellow_time) + 0.5 * a_i * (delta_t - yellow_time)**2 - d_i
+            # print("DELTA L: ", delta_L)
+            departure = np.sign(max(0, -delta_L))  # Sign function based on ΔL
+            departures.append(departure)
+        
+        # Sum the number of departures for all vehicles
+        D_l = sum(departures)
+        # print("------- GOT IN HEEEERE----- AND GOT: ", D_l)
+        return D_l
+    
+    # No departing vehicles no matter what
+    else: 
+        return 0
+
+def calculate_payoff(current_phase, leg_data, delta_t, saturation_flow_rate, yellow_time, phase):
+    
+    # Current phase is the phase which is currently green
+    # Phase is the phase which we want to calculate the payoff for
+   
+    # Extract the speed and distances for the current phase
+    current_phase_leg_data = list(leg_data.values())[phase]
+    queue_length = estimate_queue_length(current_phase_leg_data, 1, 100)
+    arrivals = estimate_arrivals(current_phase_leg_data, delta_t, current_phase, phase)
+    
+    # Print queue length and arrivals for the phase
+    # print("SCORES FOR PHASE: ", phase)
+    # print("QUEUE: ", queue_length)
+    # print("ARRIVALS: ", arrivals)
+    
+    
+    # We are in the current green phase
+    if phase == current_phase:
+        departures_stay = estimate_departures(current_phase_leg_data, delta_t, saturation_flow_rate, 'c1', yellow_time, current_phase, phase)
+        departures_switch = estimate_departures(current_phase_leg_data, delta_t, saturation_flow_rate, 'switch', yellow_time, current_phase, phase)
+    
+    # We are the next up phase to be green
+    elif phase == (current_phase+1) % 4:
+        departures_stay = estimate_departures(current_phase_leg_data, delta_t, saturation_flow_rate, 'stay', yellow_time, current_phase, phase)
+        departures_switch = estimate_departures(current_phase_leg_data, delta_t, saturation_flow_rate, 'c2', yellow_time, current_phase, phase)
+    
+    # We are in the other phases - Will get no departures no matter what
+    else:
+        departures_stay = 0
+        departures_switch = 0
+    
+    
+    # print("DEPARTURES (STAY): ", max(departures_stay, departures_switch))
+    # print("DEPARTURES (SWITCH): ", min(departures_stay, departures_switch))
+    
+    # print("PAYOFF (STAY): ", queue_length + arrivals - departures_stay)
+    # print("PAYOFF (SWITCH): ", queue_length + arrivals - departures_switch)
+    # print()
+    reward_stay = queue_length + arrivals - departures_stay
+    reward_switch = queue_length + arrivals - departures_switch
+
+    return reward_stay, reward_switch
 
 def compute_pareto_solution(leg_data, current_phase, delta_t, saturation_flow_rate, yellow_time, min_green_time, max_green_time, green_durations):
    
@@ -104,6 +217,7 @@ def compute_pareto_solution(leg_data, current_phase, delta_t, saturation_flow_ra
         return current_phase, False
     else:
         return next_phase, True
+
 
 
 # Parameters for both maps
