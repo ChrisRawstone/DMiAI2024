@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from sim.dtos import TrafficSimulationPredictResponseDto, TrafficSimulationPredictRequestDto, SignalDto
 from collections import defaultdict, deque
 from multiprocessing import Queue
+import numpy as np
 
 # Import functions from your provided module
 # from sim.pareto import (
@@ -286,12 +287,16 @@ def hello():
 def index():
     return "Your endpoint is running!"
 
+
+time_to_change = False
+
 @app.post('/predict', response_model=TrafficSimulationPredictResponseDto)
 def predict_endpoint(request: TrafficSimulationPredictRequestDto):
     global current_map, tick_count
     global current_phase, green_durations, delta_t, saturation_flow_rate, yellow_time, min_green_time, max_green_time, phase_signals, num_phases
     global current_list, current_timer, current_index, last_switch_tick, adjustment_made, waiting_counts_history
     global signal_state_durations, active_group_durations
+    global time_to_change
 
     # Decode request data
     vehicles = request.vehicles
@@ -302,9 +307,12 @@ def predict_endpoint(request: TrafficSimulationPredictRequestDto):
 
     logger.info(f"\033[94mScore at tick: {request.total_score}\033[0m")
     logger.info(f'\033[96mNumber of vehicles at tick {current_time}: {len(vehicles)}\033[0m')
-
+    logger.info(f"Current map: {current_map}")
     # Check if it's time to switch to the second map based on tick count and vehicle count
-    if tick_count > 200 and len(vehicles) < VEHICLE_THRESHOLD and current_map == 1:
+    if tick_count > 280 and tick_count > 100:
+        time_to_change = True
+        
+    if time_to_change and len(vehicles) < VEHICLE_THRESHOLD and current_map == 1:
         logger.warning("\033[93mReset detected! Switching to the second signal list.\033[0m")
         current_map = 2
         # Reset variables for map 2
