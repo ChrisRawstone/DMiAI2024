@@ -8,15 +8,103 @@ from collections import defaultdict, deque
 from multiprocessing import Queue
 
 # Import functions from your provided module
-from sim.pareto import (
-    extract_data_for_optimization,
-    estimate_acceleration_by_distance,
-    estimate_queue_length,
-    estimate_arrivals,
-    estimate_departures,
-    calculate_payoff,
-    compute_pareto_solution
-)
+# from sim.pareto import (
+#     extract_data_for_optimization,
+#     estimate_acceleration_by_distance,
+#     estimate_queue_length,
+#     estimate_arrivals,
+#     estimate_departures,
+#     calculate_payoff,
+#     compute_pareto_solution
+# )
+
+def extract_data_for_optimization(request: TrafficSimulationPredictRequestDto):
+    """Extracts all vehicle speeds, distances, and assigns a small positive acceleration per leg.
+    
+    Args:
+        request (TrafficSimulationPredictRequestDto): The current state of the simulation.
+    
+    Returns:
+        Dictionary with leg names as keys and their corresponding lists of vehicle speeds, distances, and accelerations.
+    """
+    
+    # Initialize a dictionary to hold vehicle data (speeds, distances, and accelerations) for each leg
+    leg_data = {leg.name: {'speeds': [], 'distances': []} for leg in request.legs}
+    
+    # Accumulate data for each vehicle based on its leg
+    for vehicle in request.vehicles:
+        leg_name = vehicle.leg  # The leg the vehicle belongs to
+        leg_data[leg_name]['speeds'].append(vehicle.speed)
+        leg_data[leg_name]['distances'].append(vehicle.distance_to_stop)
+
+    return leg_data
+
+def compute_pareto_solution(leg_data, current_phase, delta_t, saturation_flow_rate, yellow_time, min_green_time, max_green_time, green_durations):
+   
+    # Check for minimum and maximum green time constraints
+    if green_durations[current_phase] < min_green_time:
+        return current_phase, False  # Stay in current phase
+    
+    if green_durations[current_phase] >= max_green_time:
+        return (current_phase+1) % 4, True  # Force switch to next phase
+    
+    
+    phases = [0, 1, 2, 3]  
+    
+    # Compute the payoffs for the current phase
+    stay_current, switch_current = calculate_payoff(current_phase, 
+                                                    leg_data, 
+                                                    delta_t, 
+                                                    saturation_flow_rate, 
+                                                    yellow_time, 
+                                                    current_phase)
+    
+
+    # Compute it for the next phase
+    next_phase = (current_phase + 1) % len(phases)
+    stay_next, switch_next = calculate_payoff(current_phase, 
+                                              leg_data, 
+                                              delta_t, 
+                                              saturation_flow_rate, 
+                                              yellow_time, 
+                                              next_phase)
+    
+    # Compute it for the other phases
+    other_1 = (current_phase + 2) % len(phases)
+    other_2 = (current_phase + 3) % len(phases)
+    
+    stay_next_1, switch_next_1 = calculate_payoff(current_phase, 
+                                                  leg_data, 
+                                                  delta_t, 
+                                                  saturation_flow_rate, 
+                                                  yellow_time, 
+                                                  other_1)
+    
+    stay_next_2, switch_next_2 = calculate_payoff(current_phase, 
+                                                  leg_data, 
+                                                  delta_t, 
+                                                  saturation_flow_rate, 
+                                                  yellow_time, 
+                                                  other_2)
+    
+    
+    # Combine next, 1 and 2 in a single coorporative player
+    R_Pc_next = 0.6*stay_next + 0.3*stay_next_1 + 0.1*stay_next_2
+    R_Pc_switch = 0.6*switch_next + 0.6*switch_next_1 + 0.6*switch_next_2
+    
+    stay_stay = 0.8*stay_current + 0.2*R_Pc_next
+    switch_switch = 0.8*switch_current + 0.2*R_Pc_switch
+    
+    # print("FINAL PAYOFFS")
+    # print("STAY_STAY: ", stay_stay)
+    # print("SWITCH_SWITCH: ", switch_switch)
+    
+    
+    if 0.6*stay_stay > 0.4*switch_switch:
+        return current_phase, False
+    else:
+        return next_phase, True
+
 
 # Parameters for both maps
 current_map = 1  # Start with map 1
