@@ -472,7 +472,7 @@ class TrafficSimulationEnvHandler():
             
             if self.simulation_ticks < (self._test_duration_seconds + self.warm_up_ticks):
                 self._run_one_tick()
-                sleep(1)
+                sleep(0.01)
             else:
                 self._run_one_tick(terminates_now=True)
                 break

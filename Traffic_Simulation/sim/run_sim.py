@@ -7,13 +7,17 @@ from typing import Dict
 from collections import defaultdict
 
 #defining global variables
-global time_since_signals_has_been_green, wait_before_start_ticks, metrics, previous_green_signals
+global time_since_signals_has_been_green, wait_before_start_ticks, metrics, previous_green_signals, time_turned_green 
+global default_time_turned_green
 
 # Define threshold for stopped vehicles
 STOPPED_SPEED_THRESHOLD = 0.5  # Speed below which a vehicle is considered stopped
 QUEUE_DISTANCE_THRESHOLD = 50.0  # Distance within which to consider vehicles for queue length
 
 previous_green_signals = []
+
+time_turned_green = 1
+default_time_turned_green = 6
 
 delay = 0
 wait_before_start_ticks = 15
@@ -56,8 +60,8 @@ def get_vehicle_in_specific_leg(vehicles: List['VehicleDto'], leg_name: str) -> 
 def calculate_stopped_vehicles(vehicles: List['VehicleDto'], leg_name: str) -> int:
     return len([vehicle for vehicle in vehicles if vehicle.leg == leg_name and vehicle.speed < STOPPED_SPEED_THRESHOLD])
 
-def calculate_queue_length(vehicles: List['VehicleDto'], leg_name: str, distance_threshold: float = QUEUE_DISTANCE_THRESHOLD) -> int:
-    return len([vehicle for vehicle in vehicles if vehicle.leg == leg_name and vehicle.distance_to_stop <= distance_threshold])
+# def calculate_queue_length(vehicles: List['VehicleDto'], leg_name: str, distance_threshold: float = QUEUE_DISTANCE_THRESHOLD) -> int:
+#     return len([vehicle for vehicle in vehicles if vehicle.leg == leg_name and vehicle.distance_to_stop <= distance_threshold])
 
 def get_unique_signals(state) -> List[str]:
     unique_signals = set()
@@ -66,32 +70,22 @@ def get_unique_signals(state) -> List[str]:
             unique_signals.add(signal)
     return list(unique_signals)
 
-def find_two_signals_with_most_waiting_time(state):
+def find_two_signals_with_most_waiting_time():
     global metrics
     
     heuristic = "num_stopped"
 
     sorted_legs = sorted(metrics.items(), key=lambda x: x[1][heuristic], reverse=True)
-    signal_with_most_waiting_time = sorted_legs[0][0]
+    signal_with_most_waiting_time = sorted_legs[0][0] #A1, B2 
     
-    chosen_combination = None
-    for combination in state.allowed_green_signal_combinations:
-        if signal_with_most_waiting_time==combination.name:
-                signal_with_2nd_most_waiting_time = max([leg for leg in combination.groups if leg in metrics], key=lambda leg: metrics[leg][heuristic])
-                chosen_combination = (signal_with_most_waiting_time, signal_with_2nd_most_waiting_time)
+    # If signal is in corresponding_sidelanes, get the corresponding sideline
+    next_signal = corresponding_sidelanes[signal_with_most_waiting_time]
 
-    # if signal_with_most_waiting_time in corresponding_sidelanes:
-    #     # If signal is in corresponding_sidelanes, get the corresponding sideline
-    #     next_signal = corresponding_sidelanes[signal_with_most_waiting_time]
-    # else:
-    #     next_signal = inverse_sidelanes[signal_with_most_waiting_time]
-
-    # return (signal_with_most_waiting_time, next_signal)
-    return chosen_combination
+    return (signal_with_most_waiting_time, next_signal)
 
 def initialize_metrics(state):
     global metrics
-    for signal in state.signals:
+    for signal in state.legs:
         metrics[signal.name] = {
             'num_stopped': 0,
         }
@@ -113,67 +107,24 @@ def update_major_metrics(state):
         leg_name = leg.name
         stopped_count_majorlane = calculate_stopped_vehicles(state.vehicles, leg_name)
 
-        sidelane_signal = corresponding_sidelanes[leg_name]
-
-        stopped_count_sidelane = metrics[sidelane_signal]["num_stopped"]
         
         metrics[leg_name] = {
-            'num_stopped': (stopped_count_majorlane-stopped_count_sidelane)}
+            'num_stopped': (stopped_count_majorlane)}
 
-def get_health_sidelane(state, signal):
 
-    vehicles_current_leg = get_vehicle_in_specific_leg(state.vehicles, signal)
-
-    # Finding the vehicle with the highest distance and speed equal to 0
-    try:
-        max_distance_vehicle = max([v for v in vehicles_current_leg if v.speed == 0.0], key=lambda x: x.distance_to_stop).distance_to_stop
-    except:
-        max_distance_vehicle = 0
-
-    # Calculating the proportion of cars in speed (speed > 0) vs all cars and cars not in speed (speed = 0) vs all cars
-    total_cars = len(vehicles_current_leg)
-    cars_in_speed = len([v for v in vehicles_current_leg if v.speed > 0])
-    cars_not_in_speed = len([v for v in vehicles_current_leg if v.speed == 0])
-
-    proportion_in_speed = cars_in_speed / total_cars
-    proportion_not_in_speed = cars_not_in_speed / total_cars
-    
-    sidelane_queue_length = max_distance_vehicle
-    num_cars_in_sidelane = cars_not_in_speed
-
-    return sidelane_queue_length, num_cars_in_sidelane, proportion_in_speed, proportion_not_in_speed, 
 
 def turn_signal_green(prediction, signal):
     prediction["signals"].append({"name": signal, "state": "green"})
     return prediction
 
-def update_minor_metrics(state, current_green_signals):
-    for green_signal in current_green_signals: # remember this only works with major green signals, fix this
-        
-        if len(get_vehicle_in_specific_leg(state.vehicles, green_signal)) > 0:
-            sidelane_queue_length, num_cars_in_sidelane, proportion_in_speed, proportion_not_in_speed = get_health_sidelane(state, green_signal)
-            num_cars_in_major_lane = metrics[green_signal]["num_stopped"]
 
 
-            sidelane_signal = corresponding_sidelanes[green_signal]
-
-            metrics[sidelane_signal]["num_stopped"] = num_cars_in_sidelane
-            metrics[green_signal]["num_stopped"] = num_cars_in_major_lane-num_cars_in_sidelane
-
-
-def has_green_signals_changed(state):
-    global previous_green_signals
-    if get_green_signals(state.signals) != previous_green_signals:
-        previous_green_signals = get_green_signals(state.signals)
-        return True
-    else:
-        return False
 
 
 def run_game():
-    global time_since_signals_has_been_green, wait_before_start_ticks, metrics, previous_green_signals
+    global time_since_signals_has_been_green, wait_before_start_ticks, metrics, previous_green_signals, time_turned_green, default_time_turned_green
 
-    test_duration_seconds = 600
+    test_duration_seconds = 300
     random = True
     configuration_file = "models/1/glue_configuration.yaml"
     start_time = time()
@@ -216,15 +167,22 @@ def run_game():
         print("############################")
 
         chosen_combination = None
+        
 
-        if current_tick > wait_before_start_ticks:
-            if (time_since_signals_has_been_green-delay) > 6:
-                
-                update_major_metrics(state)
-                
-                time_since_signals_has_been_green = 0
+        if (time_since_signals_has_been_green-delay) > default_time_turned_green+time_turned_green:
+            time_turned_green = 1
             
-                chosen_combination = find_two_signals_with_most_waiting_time(state) # A1, A2, B1, B2
+            update_major_metrics(state)
+            
+            time_since_signals_has_been_green = 0
+        
+            chosen_combination = find_two_signals_with_most_waiting_time() # A1, A2, B1, B2
+
+            
+            time_turned_green += time_turned_green*round(len(get_vehicle_in_specific_leg(state.vehicles, chosen_combination[0]))*0.2)
+                
+
+
             
 
         # If a valid combination is found, activate it
@@ -240,25 +198,6 @@ def run_game():
                     prediction["signals"].append({"name": signal, "state": "red"})
 
         print(metrics)
-
-
-        current_green_signals = get_green_signals(state.signals)
-        
-        if has_green_signals_changed(state):
-            update_minor_metrics(state, current_green_signals)
-
-
-
-
-
-
-
-            
-
-
-        
-        
-
 
 
 
@@ -285,8 +224,8 @@ def run_game():
     if state.total_score == 0:
         state.total_score = 1e9
 
-    inverted_score = 1. / state.total_score
-    return inverted_score
+    print(state.total_score)
+    return state.total_score
 
 
 if __name__ == '__main__':
