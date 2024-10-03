@@ -128,7 +128,7 @@ def turn_signal_green(prediction, signal):
 
 
 HOST = "0.0.0.0"
-PORT = 9090
+PORT = 8080
 
 app = FastAPI()
 start_time = time.time()
