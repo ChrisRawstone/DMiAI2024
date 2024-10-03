@@ -4,16 +4,57 @@ from typing import List, Dict
 
 from environment_gui import load_and_run_simulation
 from typing import Dict
+from collections import defaultdict
+
+
+
+#defining global variables
+global time_since_signals_has_been_green, wait_before_start_ticks, metrics
+
 
 # Define threshold for stopped vehicles
 STOPPED_SPEED_THRESHOLD = 0.5  # Speed below which a vehicle is considered stopped
 QUEUE_DISTANCE_THRESHOLD = 50.0  # Distance within which to consider vehicles for queue length
 
-global time_since_signals_has_been_green, wait_before_start_ticks
 
-# Heuristic functions
+delay = 2
+wait_before_start_ticks = 15
+time_since_signals_has_been_green = 1000
+
+
+metrics = defaultdict(dict)
+
+
+pairs_of_signals = {
+    "A1" : "A2",
+    "A2" : "A1",  
+    "A1Left" : "A2Left",
+    "A2Left" : "A1Left",  
+    "B1" : "B2",
+    "B2" : "B1",  
+    "B1Left" : "B2Left",
+    "B2Left" : "B1Left"  
+}
+
+
+corresponding_sidelanes = {
+    "A1" : "A1Left",
+    "A2" : "A2Left",
+    "B1" : "B1Left",
+    "B2" : "B2Left"
+}
+
+
+# Helper functions
 def calculate_amount_vehicle_in_leg(vehicles: List['VehicleDto'], leg_name: str) -> int:
     return len([vehicle for vehicle in vehicles if vehicle.leg == leg_name])
+
+
+def get_green_signals(signals) -> List[str]:   
+    return [signal.name for signal in signals if signal.state == 'green']
+
+def get_vehicle_in_specific_leg(vehicles: List['VehicleDto'], leg_name: str) -> int:
+    return [vehicle for vehicle in vehicles if vehicle.leg == leg_name]
 
 def calculate_stopped_vehicles(vehicles: List['VehicleDto'], leg_name: str) -> int:
     return len([vehicle for vehicle in vehicles if vehicle.leg == leg_name and vehicle.speed < STOPPED_SPEED_THRESHOLD])
@@ -24,9 +65,25 @@ def calculate_queue_length(vehicles: List['VehicleDto'], leg_name: str, distance
 def get_unique_signals(state) -> List[str]:
     unique_signals = set()
     for leg in state.legs:
-        for lane in leg.lanes:
-            unique_signals.add(lane)
+        for signal in leg.signal_groups:
+            unique_signals.add(signal)
     return list(unique_signals)
+
+def find_two_signals_with_most_waiting_time(state):
+    global metrics
+    
+    heuristic = "num_stopped"
+
+    sorted_legs = sorted(metrics.items(), key=lambda x: x[1][heuristic], reverse=True)
+    signal_with_most_waiting_time = sorted_legs[0][0]
+    chosen_combination = None
+    for combination in state.allowed_green_signal_combinations:
+        if signal_with_most_waiting_time==combination.name:
+                signal_with_2nd_most_waiting_time = max([leg for leg in combination.groups if leg in metrics], key=lambda leg: metrics[leg][heuristic])
+                chosen_combination = (signal_with_most_waiting_time, signal_with_2nd_most_waiting_time)
+    
+    return chosen_combination
+
 
 
 
@@ -41,7 +98,8 @@ def calculate_leg_metrics(state, leg_waiting_ticks: Dict[str, int]) -> Dict[str,
     Returns:
         Dict[str, Dict[str, float]]: A dictionary containing the calculated metrics for each leg.
     """
-    metrics: Dict[str, Dict[str, float]] = {}
+    global metrics
+    
 
     for leg in state.legs:
         leg_name = leg.name
@@ -62,25 +120,61 @@ def calculate_leg_metrics(state, leg_waiting_ticks: Dict[str, int]) -> Dict[str,
         avg_wait = total_wait / stopped_count if stopped_count > 0 else 0
 
         metrics[leg_name] = {
-            'num_vehicles': num_vehicles,
+            # 'num_vehicles': num_vehicles,
             'num_stopped': stopped_count,
-            'total_waiting_time': total_wait,
-            'average_waiting_time': avg_wait,
-            'queue_length': queue_length
+            # 'total_waiting_time': total_wait,
+            # 'average_waiting_time': avg_wait,
+            # 'queue_length': queue_length
         }
+        # metrics[leg_name] = {
+        #     'num_vehicles': num_vehicles,
+        #     'num_stopped': stopped_count,
+        #     'total_waiting_time': total_wait,
+        #     'average_waiting_time': avg_wait,
+        #     'queue_length': queue_length
+        # }
 
-    return metrics, leg_waiting_ticks
+    return leg_waiting_ticks
 
 
-wait_before_start_ticks = 20
 
-time_since_signals_has_been_green = 1000
+def get_health_sidelane(state, signal):
+
+   
+    vehicles_current_leg = get_vehicle_in_specific_leg(state.vehicles, signal)
+
+    # Finding the vehicle with the highest distance and speed equal to 0
+    try:
+        max_distance_vehicle = max([v for v in vehicles_current_leg if v.speed == 0.0], key=lambda x: x.distance_to_stop).distance_to_stop
+    except:
+        max_distance_vehicle = 0
+
+    # Calculating the proportion of cars in speed (speed > 0) vs all cars and cars not in speed (speed = 0) vs all cars
+    total_cars = len(vehicles_current_leg)
+    cars_in_speed = len([v for v in vehicles_current_leg if v.speed > 0])
+    cars_not_in_speed = len([v for v in vehicles_current_leg if v.speed == 0])
+
+    proportion_in_speed = cars_in_speed / total_cars
+    proportion_not_in_speed = cars_not_in_speed / total_cars
+    
+    sidelane_queue_length = max_distance_vehicle
+    num_cars_in_sidelane = cars_not_in_speed
+
+    return sidelane_queue_length, num_cars_in_sidelane, proportion_in_speed, proportion_not_in_speed, 
+
+
+def turn_signal_green(prediction, signal):
+    prediction["signals"].append({"name": signal, "state": "green"})
+    return prediction
+
+
+
 
 
 
 
 def run_game():
-    global time_since_signals_has_been_green, wait_before_start_ticks
+    global time_since_signals_has_been_green, wait_before_start_ticks, metrics
 
     test_duration_seconds = 600
     random = True
@@ -108,11 +202,15 @@ def run_game():
     actions = {}
     leg_waiting_ticks = {}
 
+
+    
     
 
     while True:
         state = output_queue.get()
         unique_signals = get_unique_signals(state)
+
+
 
         if state.is_terminated:
             p.join()
@@ -124,36 +222,57 @@ def run_game():
         print("Current tick: ", current_tick)
         print("############################")
 
-        metrics, leg_waiting_ticks = calculate_leg_metrics(state, leg_waiting_ticks)
+        leg_waiting_ticks = calculate_leg_metrics(state, leg_waiting_ticks)
+        chosen_combination = None
 
+        if current_tick > wait_before_start_ticks:
+            if (time_since_signals_has_been_green-delay) > 6:
 
-        if time_since_signals_has_been_green > 10:
-            # Sort legs by total waiting time (descending order)
-            time_since_signals_has_been_green = 0
-            sorted_legs = sorted(metrics.items(), key=lambda x: x[1]['total_waiting_time'], reverse=True)
-
-            # find the leg with most waiting time
-            signal_with_most_waiting_time = sorted_legs[0][0]
-
-            # Find allowed combinations that include the top two legs
-            chosen_combination = None
-            for combination in state.allowed_green_signal_combinations:
-                if signal_with_most_waiting_time==combination.name:
-                        signal_with_2nd_most_waiting_time = max([leg for leg in combination.groups if leg in metrics], key=lambda leg: metrics[leg]['total_waiting_time'])
-                        chosen_combination = (signal_with_most_waiting_time, signal_with_2nd_most_waiting_time)
-            
-
-
-            print("turning ", chosen_combination, "green")
-            # if state.simulation_ticks > wait_before_start_ticks:
+                time_since_signals_has_been_green = 0
+                
+                chosen_combination = find_two_signals_with_most_waiting_time(state) # A1, A2, B1, B2
 
         # If a valid combination is found, activate it
         prediction = {"signals": []}
         if chosen_combination:
+            print("turning ", chosen_combination, "green")
             for signal in chosen_combination:
-                prediction["signals"].append({"name": signal, "state": "green"})
+                prediction = turn_signal_green(prediction, signal)
+                
+            # turn all signals red for 
+            for signal in unique_signals:
+                if signal not in chosen_combination:
+                    prediction["signals"].append({"name": signal, "state": "red"})
+
+        print(metrics)
+
+        current_green_signals = get_green_signals(state.signals)
+        
+        for green_signal in current_green_signals: # remember this only works with major green signals, fix this
+            
+            if len(get_vehicle_in_specific_leg(state.vehicles, green_signal)) > 0:
+                sidelane_queue_length, num_cars_in_sidelane, proportion_in_speed, proportion_not_in_speed = get_health_sidelane(state, green_signal)
+                num_cars_in_major_lane = metrics[green_signal]["num_stopped"]
+
+
+                sidelane_signal = corresponding_sidelanes[green_signal]
+
+                metrics[sidelane_signal]["num_stopped"] = num_cars_in_sidelane
+                metrics[green_signal]["num_stopped"] = num_cars_in_major_lane-num_cars_in_sidelane
+
+
+
+
+
+
 
             
+
+
+        
+        
+
+
 
 
 
