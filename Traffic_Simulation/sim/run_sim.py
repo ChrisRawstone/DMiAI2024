@@ -63,6 +63,15 @@ def calculate_stopped_vehicles(vehicles: List['VehicleDto'], leg_name: str) -> i
 # def calculate_queue_length(vehicles: List['VehicleDto'], leg_name: str, distance_threshold: float = QUEUE_DISTANCE_THRESHOLD) -> int:
 #     return len([vehicle for vehicle in vehicles if vehicle.leg == leg_name and vehicle.distance_to_stop <= distance_threshold])
 
+def get_signal_groups(name, legs):
+    for leg in legs:
+        if leg.name == name:
+            return leg.signal_groups
+    AssertionError
+
+
+
+
 def get_unique_signals(state) -> List[str]:
     unique_signals = set()
     for leg in state.legs:
@@ -70,7 +79,7 @@ def get_unique_signals(state) -> List[str]:
             unique_signals.add(signal)
     return list(unique_signals)
 
-def find_two_signals_with_most_waiting_time():
+def find_two_signals_with_most_waiting_time(state):
     global metrics
     
     heuristic = "num_stopped"
@@ -79,9 +88,23 @@ def find_two_signals_with_most_waiting_time():
     signal_with_most_waiting_time = sorted_legs[0][0] #A1, B2 
     
     # If signal is in corresponding_sidelanes, get the corresponding sideline
-    next_signal = corresponding_sidelanes[signal_with_most_waiting_time]
+    # next_signal = corresponding_sidelanes[signal_with_most_waiting_time]
+    next_signals = get_signal_groups(signal_with_most_waiting_time, state.legs)
 
-    return (signal_with_most_waiting_time, next_signal)
+    # get all signals in next_signals that is not signal_with_most_waiting_time
+    next_signals_cleaned = [signal for signal in next_signals if signal != signal_with_most_waiting_time]
+    
+    # unpack the next_signals
+    try:
+        return signal_with_most_waiting_time, next_signals_cleaned[0], next_signals_cleaned[1]
+    except:
+        return signal_with_most_waiting_time, next_signals_cleaned[0]
+
+
+
+
+
+
 
 def initialize_metrics(state):
     global metrics
@@ -176,7 +199,7 @@ def run_game():
             
             time_since_signals_has_been_green = 0
         
-            chosen_combination = find_two_signals_with_most_waiting_time() # A1, A2, B1, B2
+            chosen_combination = find_two_signals_with_most_waiting_time(state) # A1, A2, B1, B2
 
             
             time_turned_green += time_turned_green*round(len(get_vehicle_in_specific_leg(state.vehicles, chosen_combination[0]))*0.2)
@@ -209,6 +232,10 @@ def run_game():
             next_signals[signal['name']] = signal['state']
 
         input_queue.put(next_signals)
+
+
+        
+
 
         # Handle any errors from error_queue
         try:
