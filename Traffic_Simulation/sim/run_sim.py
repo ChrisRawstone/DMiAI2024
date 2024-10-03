@@ -16,31 +16,25 @@ first_list = [
     ['B2', 'B2LeftTurn']
 ]
 
+
+# These variables shall be used for bayesian optimization
 # Define original durations in ticks for each index
-original_cycle_durations = [30, 20, 25, 20]
+original_cycle_durations = [30, 30, 25, 25]
+ticks_reduction = 15  # Ticks of duration reduction
+
+
 cycle_durations = original_cycle_durations.copy()
 ticks_per_group = 0  # Tracks how many ticks each group has been active
+current_index = 0  # Tracks which signal group is currently active
+duration_reduced = False  # Boolean flag to ensure reduction happens only once per cycle
 
-# Adaptive timing constants
-WINDOW_SIZE = 5  # Number of ticks over which we calculate the change
-PROLONG_TICKS = 0  # Prolong the green period by 5 ticks if waiting cars decrease significantly
-REDUCE_TICKS = 0  # Fallback full reduction value if needed
-speed_threshold = 0.5  # Speed threshold to consider a vehicle as waiting
 
-# Hyperparameters
-ReduceStep = 15
-ProlongStep = 5
-When_to_Reduce = 2
-current_index = 0
 
-# Logging variables for signal state durations and active group durations
+# Track vehicle counts for each leg for the last 5 ticks
+vehicle_counts_history = defaultdict(lambda: deque(maxlen=5))
+
+# Logging variables for signal state durations
 signal_state_durations = defaultdict(lambda: defaultdict(int))
-active_group_durations = defaultdict(int)
-
-# Variables to track previous waiting vehicle counts for adaptive adjustments
-previous_waiting_vehicle_counts = defaultdict(int)
-vehicle_counts_history = deque(maxlen=WINDOW_SIZE)
-adjustment_made = False
 
 # Function to log results
 def log_results_to_file():
@@ -50,94 +44,78 @@ def log_results_to_file():
         f.write("Signal state durations (in ticks):\n")
         for signal, states in signal_state_durations.items():
             f.write(f"Signal {signal}: {states}\n")
-        f.write("\nActive group durations (in ticks):\n")
-        for signal, ticks in active_group_durations.items():
-            f.write(f"Signal {signal}: {ticks} ticks in active group\n")
 
-# Main simulation function
+# Main simulation function with temporary duration adjustments
 def run_game():
     test_duration_seconds = 300
     random = False
     configuration_file = "models/1/glue_configuration.yaml"
-    
+
     # Start simulation process
     p = Process(target=load_and_run_simulation, args=(configuration_file, None, test_duration_seconds, random, input_queue, output_queue, error_queue))
     p.start()
-    global current_index, ticks_per_group, vehicle_counts_history, adjustment_made, cycle_durations
+
+    global current_index, ticks_per_group, duration_reduced
     while True:
-        # print("cycle_durations:   ", cycle_durations)
         # Get the state from the output_queue
         state = output_queue.get()
         if state.is_terminated:
             p.join()
             break
-        
-        # Log number of vehicles in each leg
-        leg_vehicle_counts = defaultdict(int)
-        waiting_vehicle_counts = defaultdict(int)
+
+        # Extract legs dynamically
+        legs = [state.legs[leg].name for leg in range(len(state.legs))]
+        current_leg = legs[current_index]  # Only one active leg
+
+        # Count the number of vehicles in the active leg
+        leg_vehicle_count = 0
         for vehicle in state.vehicles:
-            leg_vehicle_counts[vehicle.leg] += 1
-            if vehicle.speed <= speed_threshold:
-                waiting_vehicle_counts[vehicle.leg] += 1
+            if vehicle.leg == current_leg:
+                leg_vehicle_count += 1
 
-        # Store the current tick's waiting vehicle counts in history
-        vehicle_counts_history.append(waiting_vehicle_counts.copy())
-    
-        # Calculate the change in waiting vehicle counts for adaptive timing
-        if len(vehicle_counts_history) == WINDOW_SIZE and ticks_per_group > When_to_Reduce:
-            previous_counts = vehicle_counts_history[0]
-            change_in_vehicle_counts = {leg: waiting_vehicle_counts[leg] - previous_counts.get(leg, 0) for leg in waiting_vehicle_counts}
-            active_group_legs = first_list[current_index]
-            active_changes = [change_in_vehicle_counts.get(leg, 0) for leg in active_group_legs]
-            
-            if all(change < -4 for change in active_changes) and not adjustment_made:
-                cycle_durations[current_index] += ProlongStep
-                adjustment_made = True
-                # print(f"Prolonging green period for {active_group_legs} by {PROLONG_TICKS} ticks.")
-            elif all(change > -1 for change in active_changes) and not adjustment_made:
-                cycle_durations[current_index] = max(1, cycle_durations[current_index] - ReduceStep)
-                adjustment_made = True
-        
+        # Store the current vehicle count in the history for the active leg
+        vehicle_counts_history[current_leg].append(leg_vehicle_count)
+
+        # Check if we have 5 ticks of history for the active leg
+        if len(vehicle_counts_history[current_leg]) == 5:
+            # Calculate the change in vehicle count over the last 5 ticks
+            change_in_vehicle_count = vehicle_counts_history[current_leg][-1] - vehicle_counts_history[current_leg][0]
+            # print(f"current leg: {current_leg}, vehicle count: {leg_vehicle_count}, change in vehicle count: {change_in_vehicle_count}")
+            # Temporarily adjust the current cycle duration if the change is greater than -2 and hasn't been reduced yet
+            temporary_duration = cycle_durations[current_index]
+            if change_in_vehicle_count > -1 and not duration_reduced:
+                temporary_duration = max(1, temporary_duration - ticks_reduction)  # Ensure duration doesn't go below 1
+                duration_reduced = True  # Set flag to prevent further reduction this cycle
+                print(f"Reducing duration for {current_leg} to {temporary_duration} ticks")
+        else:
+            temporary_duration = cycle_durations[current_index]
+
         ticks_per_group += 1
-        
-        # Adjust green time based on the number of waiting vehicles
-        total_waiting_vehicles = sum(waiting_vehicle_counts.values())
 
-        if total_waiting_vehicles > 0:  # Avoid division by zero
-            for leg in active_group_legs:
-                leg_weight = waiting_vehicle_counts.get(leg, 0) / total_waiting_vehicles
-                # Increase cycle duration proportionally
-                cycle_durations[current_index] += int(ProlongStep * leg_weight)
-
-
-        # Check if cycle duration has passed
-        if ticks_per_group >= cycle_durations[current_index]:
+        # Check if the current signal group's (temporary) duration has been reached
+        if ticks_per_group >= temporary_duration:
+            # Move to the next signal group
             current_index = (current_index + 1) % len(first_list)
-            ticks_per_group = 0
-            adjustment_made = False
-            # Modify the cycle reset logic to retain a portion of the adjustments
-            # 70% original value and 30% adjusted value
-            cycle_durations[current_index] = int(0.9 * original_cycle_durations[current_index] + 0.1 * cycle_durations[current_index])
+            ticks_per_group = 0  # Reset tick counter for the new signal group
+            duration_reduced = False  # Reset the flag for the new cycle
 
-
-        # Set signal states for the next tick
+        # Set signal states for the next tick based on the current signal group
         active_group = first_list[current_index]
         next_signals = []
         for signal in state.signals:
             if signal.name in active_group:
                 next_signals.append(SignalDto(name=signal.name, state="green"))
                 signal_state_durations[signal.name]["green"] += 1  # Log green state duration
-                active_group_durations[signal.name] += 1  # Track how long it's been in the active group
             else:
                 next_signals.append(SignalDto(name=signal.name, state="red"))
                 signal_state_durations[signal.name]["red"] += 1  # Log red state duration
-        
+
         # Send the next signal states back to the simulation
         input_queue.put({signal.name: signal.state for signal in next_signals})
 
         # Log results to the file after each tick
         log_results_to_file()
-        
+
     return state.total_score
 
 if __name__ == '__main__':
