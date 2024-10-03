@@ -83,7 +83,10 @@ def find_two_signals_with_most_waiting_time(legs):
     try:
         return signal_with_most_waiting_time, next_signals_cleaned[0], next_signals_cleaned[1]
     except:
-        return signal_with_most_waiting_time, next_signals_cleaned[0]
+        try:
+            return signal_with_most_waiting_time, next_signals_cleaned[0]
+        except:
+            return signal_with_most_waiting_time
 
 
 
@@ -169,6 +172,7 @@ def predict_endpoint(request: TrafficSimulationPredictRequestDto):
     print("Current tick: ", simulation_ticks)
     print("############################")
 
+
     chosen_combination = None
     
 
@@ -184,7 +188,6 @@ def predict_endpoint(request: TrafficSimulationPredictRequestDto):
         
         time_turned_green += time_turned_green*round(len(get_vehicle_in_specific_leg(vehicles, chosen_combination[0]))*0.2)
             
-
 
         
 
@@ -230,6 +233,8 @@ def predict_endpoint(request: TrafficSimulationPredictRequestDto):
     response = TrafficSimulationPredictResponseDto(
         signals=api_signals
     )
+
+    time_since_signals_has_been_green += 1
 
     return response
 
