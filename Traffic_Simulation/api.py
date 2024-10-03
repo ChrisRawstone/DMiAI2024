@@ -32,18 +32,20 @@ def predict_endpoint(request: TrafficSimulationPredictRequestDto):
     # Decode request data
     signals = request.signals
     next_signals = []
+    amber_time = 2
+    red_amber_time = 4
 
     if previous_states is not None and shift_to is not None:
         if shift_to == "green":
             if all([signal.state == "green" for signal in signals]):
-                print(f"It took {request.simulation_ticks - shift_time} ticks to change the signals to green")
+                print(f"It took {request.simulation_ticks - shift_time - amber_time} ticks to change the signals to green")
                 for signal in signals:
                     print(f"Signal {signal.name} is {signal.state}")
                 shift_to = None
 
         if shift_to == "red":
             if all([signal.state == "red" for signal in signals]):
-                print(f"It took {request.simulation_ticks - shift_time} ticks to change the signals to red")
+                print(f"It took {request.simulation_ticks - shift_time - red_amber_time} ticks to change the signals to red")
                 for signal in signals:
                     print(f"Signal {signal.name} is {signal.state}")
                 shift_to = None
