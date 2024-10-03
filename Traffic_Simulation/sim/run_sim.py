@@ -18,6 +18,28 @@ def calculate_stopped_vehicles(vehicles: List['VehicleDto'], leg_name: str) -> i
 def calculate_queue_length(vehicles: List['VehicleDto'], leg_name: str, distance_threshold: float = QUEUE_DISTANCE_THRESHOLD) -> int:
     return len([vehicle for vehicle in vehicles if vehicle.leg == leg_name and vehicle.distance_to_stop <= distance_threshold])
 
+def get_unique_signals(state) -> List[str]:
+    """
+    Extracts all unique lane names from the legs in the simulation state.
+
+    Args:
+        state (TrafficSimulationPredictRequestDto): The current simulation state.
+
+    Returns:
+        List[str]: A list of unique lane names.
+    """
+    unique_signals = set()
+    for leg in state.legs:
+        for lane in leg.lanes:
+            unique_signals.add(lane)
+
+    return list(unique_signals)
+
+
+
+
+
+
 def run_game():
     test_duration_seconds = 600
     random = True
@@ -66,10 +88,8 @@ def run_game():
 
         for leg in state.legs:
             leg_name = leg.name
-            vehicles_in_leg = [v for v in state.vehicles if v.leg == leg_name]
             stopped_count = calculate_stopped_vehicles(state.vehicles, leg_name)
             queue_length = calculate_queue_length(state.vehicles, leg_name)
-
             num_vehicles = calculate_amount_vehicle_in_leg(state.vehicles, leg_name)
 
             # Update waiting ticks
@@ -77,7 +97,7 @@ def run_game():
                 leg_waiting_ticks[leg_name] = 0
 
             if stopped_count > 0:
-                leg_waiting_ticks[leg_name] += 1
+                leg_waiting_ticks[leg_name] += stopped_count
             else:
                 leg_waiting_ticks[leg_name] = 0  # Reset if no vehicles are stopped
 
