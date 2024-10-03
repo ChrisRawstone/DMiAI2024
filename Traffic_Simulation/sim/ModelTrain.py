@@ -1,10 +1,13 @@
 from stable_baselines3 import PPO
 from stable_baselines3.common.env_checker import check_env
 from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback, BaseCallback
+from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 from TrafficEnv import TrafficEnv
+import gymnasium as gym  # Import gymnasium
 import os
+from stable_baselines3.common.env_checker import check_env
 
-# Custom callback to save training stats to a txt file when the best model is saved
+
 class StatsLoggingCallback(BaseCallback):
     def __init__(self, eval_callback, log_dir, verbose=1):
         super(StatsLoggingCallback, self).__init__(verbose)
@@ -14,10 +17,8 @@ class StatsLoggingCallback(BaseCallback):
         self.filepath = os.path.join(self.log_dir, "training_stats.txt")
 
     def _on_step(self):
-        # Check if a new best model was found
         if self.eval_callback.best_mean_reward > self.best_mean_reward:
             self.best_mean_reward = self.eval_callback.best_mean_reward
-            # Save the stats in the txt file
             with open(self.filepath, "a") as f:
                 f.write(f"New best model at step {self.num_timesteps}:\n")
                 f.write(f"Mean Reward: {self.best_mean_reward}\n")
@@ -25,71 +26,57 @@ class StatsLoggingCallback(BaseCallback):
         return True
 
 def main():
+    # Create and check the environment
     env = TrafficEnv()
+    check_env(env)  # Use the unwrapped environment for checking
 
-    # Optional: Check that the environment follows the Gymnasium API
-    check_env(env)
+    # Wrap the environment for training
+    env = DummyVecEnv([lambda: env])
+    env = VecNormalize(env, norm_obs=True, norm_reward=True)
 
     # Directory to save the models and log files
     log_dir = "./models/"
+    saved_model_path = os.path.join(log_dir, "ppo_traffic_model_latest.zip")
 
-    # Path to the saved model (if any)
-    saved_model_path = os.path.join(log_dir, "ppo_traffic_model_final.zip")
-
-    # Check if a saved model exists
     if os.path.exists(saved_model_path):
         print(f"Loading saved model from {saved_model_path} to continue training.")
-        # Load the saved model
         model = PPO.load(saved_model_path, env=env)
     else:
         print("No saved model found. Creating a new model.")
-        # Create a new PPO model from scratch with custom hyperparameters
-    model = PPO(
-        'MlpPolicy',
-        env,
-        verbose=1,
-        learning_rate=0.0001,   # Slow, stable learning
-        n_steps=300,            # Match with episode length (300 steps)
-        batch_size=64,          # Moderate batch size for smoother updates
-        n_epochs=10,            # More epochs to refine updates
-        gamma=0.99,             # Value long-term rewards
-        gae_lambda=0.95,        # Generalized Advantage Estimation factor
-        clip_range=0.2,         # Conservative clipping range for stability
-        ent_coef=0.01,          # Encourage exploration (early in training)
-        vf_coef=0.5,            # Value function importance
-        max_grad_norm=0.5       # Prevent gradient explosion
-    )
+        model = PPO(
+            'MlpPolicy',
+            env,
+            verbose=1,
+            learning_rate=0.0001,
+            n_steps=256,
+            batch_size=256,
+            n_epochs=10,
+            gamma=0.99,
+            gae_lambda=0.95,
+            clip_range=0.2,
+            ent_coef=0.01,
+            vf_coef=0.5,
+            max_grad_norm=0.5
+        )
 
+    checkpoint_callback = CheckpointCallback(save_freq=1000, save_path=log_dir, name_prefix='ppo_traffic_model')
+    eval_env = DummyVecEnv([lambda: TrafficEnv()])
+    eval_env = VecNormalize(eval_env, norm_obs=True, norm_reward=True)
 
-    # Create a callback to save the model periodically
-    checkpoint_callback = CheckpointCallback(save_freq=1000, save_path=log_dir,
-                                             name_prefix='ppo_traffic_model')
-
-    # Create an environment for evaluation
-    eval_env = TrafficEnv()
-
-    # Create an EvalCallback to save the best model based on performance
     eval_callback = EvalCallback(
         eval_env,
         best_model_save_path=log_dir,
         log_path=log_dir,
-        eval_freq=1000,  # Evaluate every 1000 steps
+        eval_freq=1000,
         deterministic=True,
         render=False
     )
-
-    # Custom callback for logging stats when the best model is saved
     stats_logging_callback = StatsLoggingCallback(eval_callback, log_dir)
+    total_timesteps = 100000
+    model.learn(total_timesteps=total_timesteps, callback=[checkpoint_callback, eval_callback, stats_logging_callback])
 
-    # Train the model with the combined callbacks
-    total_timesteps = 10000  # Adjust as needed
-    model.learn(total_timesteps=total_timesteps, 
-                callback=[checkpoint_callback, eval_callback, stats_logging_callback])
-
-    # Save the final model
     model.save(os.path.join(log_dir, "ppo_traffic_model_final"))
-
-    # Close the environment
+    env.save(os.path.join(log_dir, "vec_normalize.pkl"))
     env.close()
 
 if __name__ == '__main__':

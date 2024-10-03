@@ -1,16 +1,19 @@
 from stable_baselines3 import PPO
 from TrafficEnv import TrafficEnv
 import numpy as np
+from stable_baselines3.common.env_checker import check_env
+
 
 def main():
     # Load the trained model
     # model_path = "ppo_traffic_model_final.zip"  # Adjust the path if necessary
-    model_path = "models/ppo_traffic_model_3000_steps.zip"  # Adjust the path if necessary
+    model_path = "models/ppo_traffic_model_7000_steps.zip"  # Adjust the path if necessary
     model = PPO.load(model_path)
 
     # Create the environment
     env = TrafficEnv()
-
+    check_env(env)
+    
     # Number of episodes to run
     num_episodes = 5
 
