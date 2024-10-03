@@ -3,10 +3,13 @@ from time import sleep, time
 from typing import List, Dict
 
 from environment_gui import load_and_run_simulation
+from typing import Dict
 
 # Define threshold for stopped vehicles
 STOPPED_SPEED_THRESHOLD = 0.5  # Speed below which a vehicle is considered stopped
 QUEUE_DISTANCE_THRESHOLD = 50.0  # Distance within which to consider vehicles for queue length
+
+global time_since_signals_has_been_green, wait_before_start_ticks
 
 # Heuristic functions
 def calculate_amount_vehicle_in_leg(vehicles: List['VehicleDto'], leg_name: str) -> int:
@@ -19,28 +22,66 @@ def calculate_queue_length(vehicles: List['VehicleDto'], leg_name: str, distance
     return len([vehicle for vehicle in vehicles if vehicle.leg == leg_name and vehicle.distance_to_stop <= distance_threshold])
 
 def get_unique_signals(state) -> List[str]:
-    """
-    Extracts all unique lane names from the legs in the simulation state.
-
-    Args:
-        state (TrafficSimulationPredictRequestDto): The current simulation state.
-
-    Returns:
-        List[str]: A list of unique lane names.
-    """
     unique_signals = set()
     for leg in state.legs:
         for lane in leg.lanes:
             unique_signals.add(lane)
-
     return list(unique_signals)
 
 
+
+def calculate_leg_metrics(state, leg_waiting_ticks: Dict[str, int]) -> Dict[str, Dict[str, float]]:
+    """
+    Calculates various traffic metrics for each leg in the given state.
+
+    Args:
+        state: The current state of the traffic simulation.
+        leg_waiting_ticks (Dict[str, int]): Dictionary to keep track of waiting ticks for each leg.
+
+    Returns:
+        Dict[str, Dict[str, float]]: A dictionary containing the calculated metrics for each leg.
+    """
+    metrics: Dict[str, Dict[str, float]] = {}
+
+    for leg in state.legs:
+        leg_name = leg.name
+        stopped_count = calculate_stopped_vehicles(state.vehicles, leg_name)
+        queue_length = calculate_queue_length(state.vehicles, leg_name)
+        num_vehicles = calculate_amount_vehicle_in_leg(state.vehicles, leg_name)
+
+        # Update waiting ticks
+        if leg_name not in leg_waiting_ticks:
+            leg_waiting_ticks[leg_name] = 0
+
+        if stopped_count > 0:
+            leg_waiting_ticks[leg_name] += stopped_count
+        else:
+            leg_waiting_ticks[leg_name] = 0  # Reset if no vehicles are stopped
+
+        total_wait = leg_waiting_ticks[leg_name]
+        avg_wait = total_wait / stopped_count if stopped_count > 0 else 0
+
+        metrics[leg_name] = {
+            'num_vehicles': num_vehicles,
+            'num_stopped': stopped_count,
+            'total_waiting_time': total_wait,
+            'average_waiting_time': avg_wait,
+            'queue_length': queue_length
+        }
+
+    return metrics, leg_waiting_ticks
+
+
+wait_before_start_ticks = 20
+
+time_since_signals_has_been_green = 1000
 
 
 
 
 def run_game():
+    global time_since_signals_has_been_green, wait_before_start_ticks
+
     test_duration_seconds = 600
     random = True
     configuration_file = "models/1/glue_configuration.yaml"
@@ -62,16 +103,16 @@ def run_game():
     ))
     
     p.start()
+    sleep(0.2)  # Wait for the simulation to start
 
-    # Wait for the simulation to start
-    sleep(0.2)
-
-    # For logging
     actions = {}
-    leg_waiting_ticks = {}  # To track consecutive ticks with stopped vehicles per leg
+    leg_waiting_ticks = {}
+
+    
 
     while True:
         state = output_queue.get()
+        unique_signals = get_unique_signals(state)
 
         if state.is_terminated:
             p.join()
@@ -79,60 +120,40 @@ def run_game():
 
         current_tick = state.simulation_ticks
 
-        # print(f'--- Tick: {current_tick} ---')
-        # print(f'Vehicles: {state.vehicles}')
-        # print(f'Signals: {state.signals}')
+        print("############################")
+        print("Current tick: ", current_tick)
+        print("############################")
 
-        # Initialize metrics dictionary
-        metrics: Dict[str, Dict[str, float]] = {}
+        metrics, leg_waiting_ticks = calculate_leg_metrics(state, leg_waiting_ticks)
 
-        for leg in state.legs:
-            leg_name = leg.name
-            stopped_count = calculate_stopped_vehicles(state.vehicles, leg_name)
-            queue_length = calculate_queue_length(state.vehicles, leg_name)
-            num_vehicles = calculate_amount_vehicle_in_leg(state.vehicles, leg_name)
 
-            # Update waiting ticks
-            if leg_name not in leg_waiting_ticks:
-                leg_waiting_ticks[leg_name] = 0
+        if time_since_signals_has_been_green > 1:
+            # Sort legs by total waiting time (descending order)
+            time_since_signals_has_been_green = 0
+            sorted_legs = sorted(metrics.items(), key=lambda x: x[1]['total_waiting_time'], reverse=True)
 
-            if stopped_count > 0:
-                leg_waiting_ticks[leg_name] += stopped_count
-            else:
-                leg_waiting_ticks[leg_name] = 0  # Reset if no vehicles are stopped
+            # find the leg with most waiting time
+            signal_with_most_waiting_time = sorted_legs[0][0]
 
-            # Calculate heuristics
-            total_wait = leg_waiting_ticks[leg_name]
-            avg_wait = total_wait / stopped_count if stopped_count > 0 else 0
-            max_wait = total_wait  # Simplification since we can't track individual vehicles
+            # Find allowed combinations that include the top two legs
+            chosen_combination = None
+            for combination in state.allowed_green_signal_combinations:
+                if signal_with_most_waiting_time==combination.name:
+                        signal_with_2nd_most_waiting_time = max(combination.groups, key=lambda leg: metrics.get(leg, {}).get('total_waiting_time', 0))
+                        chosen_combination = (signal_with_most_waiting_time, signal_with_2nd_most_waiting_time)
+                        
+            print("turning ", chosen_combination, "green")
+            # if state.simulation_ticks > wait_before_start_ticks:
 
-            # Store metrics
-            metrics[leg_name] = {
-                'num_vehicles': num_vehicles,
-                'num_stopped': stopped_count,
-                'total_waiting_time': total_wait,
-                'average_waiting_time': avg_wait,
-                'max_waiting_time': max_wait,
-                'queue_length': queue_length
-            }
-
-            # Print metrics for debugging
-            print(f'Leg {leg_name}: {metrics[leg_name]}')
-
-        # Example: Use heuristics to decide signal states
+        # If a valid combination is found, activate it
         prediction = {"signals": []}
+        if chosen_combination:
+            for signal in chosen_combination:
+                prediction["signals"].append({"name": signal, "state": "green"})
 
-        for leg_name, data in metrics.items():
-            # Simple heuristic: if total_waiting_time exceeds threshold, set signal to green
-            TOTAL_WAIT_THRESHOLD = 10  # Define an appropriate threshold based on simulation ticks
-            if data['total_waiting_time'] > TOTAL_WAIT_THRESHOLD:
-                prediction["signals"].append({"name": leg_name, "state": "green"})
-            else:
-                prediction["signals"].append({"name": leg_name, "state": "red"})
+            
 
-        # Ensure only allowed signal combinations are activated
-        # Implement logic based on allowed_green_signal_combinations
-        # For simplicity, assume no conflicts in this example
+
 
         # Update the desired phase of the traffic lights
         next_signals = {}
@@ -150,16 +171,15 @@ def run_game():
                     errors.append(signal_logic_errors)
         except:
             pass
+        time_since_signals_has_been_green += 1
 
-    # End of simulation, return the score
 
-    # Transform the score to the range [0, 1]
     if state.total_score == 0:
         state.total_score = 1e9
 
     inverted_score = 1. / state.total_score
-
     return inverted_score
+
 
 if __name__ == '__main__':
     run_game()

@@ -370,32 +370,7 @@ class TrafficSimulationEnvHandler():
 
         return observed_vehicles
 
-    def demo(self):
-        sumoBinary = checkBinary('sumo')
 
-        logger.info('Traffic simulation - starting sumo....')
-
-        sim_instance = uuid4().hex
-
-        traci.start([sumoBinary, "--start", "--random", "--quit-on-end", "-c", (self._model_folder / "net.sumocfg").as_posix()], label=sim_instance)
-        self._traci_connection = traci.getConnection(sim_instance)
-        self._is_initialized = True
-
-        simulationTicks = self.warm_up_ticks
-
-        self.set_next_signals({
-            'B2': 'green',
-            'B1': 'green'
-        })
-
-        for i in range(simulationTicks):
-            self._run_one_tick()
-
-        logger.info('Traffic simulation - finished....')
-
-        self._traci_connection.close()
-
-        return self.observable_state
 
     def _run_one_tick(self, terminates_now=False):
         self._traci_connection.simulationStep()
@@ -472,7 +447,7 @@ class TrafficSimulationEnvHandler():
             
             if self.simulation_ticks < (self._test_duration_seconds + self.warm_up_ticks):
                 self._run_one_tick()
-                sleep(1)
+                sleep(0.1)
             else:
                 self._run_one_tick(terminates_now=True)
                 break
