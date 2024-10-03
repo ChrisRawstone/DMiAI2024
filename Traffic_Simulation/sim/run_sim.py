@@ -25,25 +25,6 @@ time_since_signals_has_been_green = 1000
 
 metrics = defaultdict(dict)
 
-pairs_of_signals = {
-    "A1" : "A2",
-    "A2" : "A1",  
-    "A1LeftTurn" : "A2LeftTurn",
-    "A2LeftTurn" : "A1LeftTurn",  
-    "B1" : "B2",
-    "B2" : "B1",  
-    "B1LeftTurn" : "B2LeftTurn",
-    "B2LeftTurn" : "B1LeftTurn"  
-}
-
-
-corresponding_sidelanes = {
-    "A1" : "A1LeftTurn",
-    "A2" : "A2LeftTurn",
-    "B1" : "B1LeftTurn",
-    "B2" : "B2LeftTurn"
-}
-inverse_sidelanes = {v: k for k, v in corresponding_sidelanes.items()}
 
 
 # Helper functions
@@ -221,9 +202,6 @@ def run_game():
                     prediction["signals"].append({"name": signal, "state": "red"})
 
         print(metrics)
-
-
-
 
         # Update the desired phase of the traffic lights
         next_signals = {}
