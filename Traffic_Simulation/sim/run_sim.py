@@ -127,7 +127,7 @@ def run_game():
         metrics, leg_waiting_ticks = calculate_leg_metrics(state, leg_waiting_ticks)
 
 
-        if time_since_signals_has_been_green > 1:
+        if time_since_signals_has_been_green > 10:
             # Sort legs by total waiting time (descending order)
             time_since_signals_has_been_green = 0
             sorted_legs = sorted(metrics.items(), key=lambda x: x[1]['total_waiting_time'], reverse=True)
@@ -139,9 +139,11 @@ def run_game():
             chosen_combination = None
             for combination in state.allowed_green_signal_combinations:
                 if signal_with_most_waiting_time==combination.name:
-                        signal_with_2nd_most_waiting_time = max(combination.groups, key=lambda leg: metrics.get(leg, {}).get('total_waiting_time', 0))
+                        signal_with_2nd_most_waiting_time = max([leg for leg in combination.groups if leg in metrics], key=lambda leg: metrics[leg]['total_waiting_time'])
                         chosen_combination = (signal_with_most_waiting_time, signal_with_2nd_most_waiting_time)
-                        
+            
+
+
             print("turning ", chosen_combination, "green")
             # if state.simulation_ticks > wait_before_start_ticks:
 
