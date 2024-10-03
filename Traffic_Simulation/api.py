@@ -28,7 +28,9 @@ shift_to = None
 @app.post('/predict', response_model=TrafficSimulationPredictResponseDto)
 def predict_endpoint(request: TrafficSimulationPredictRequestDto):
     global previous_states, shift_time, shift_to
-
+    # Print tick
+    print(f"Tick: {request.simulation_ticks}")
+    
     # Decode request data
     signals = request.signals
     next_signals = []
