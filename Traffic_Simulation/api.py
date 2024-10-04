@@ -207,9 +207,7 @@ def compute_pareto_solution1(leg_data, current_phase, delta_t, saturation_flow_r
     else:
         return next_phase, True
 
-
 ############# FOR MAP 2 ##################
-
 
 def extract_data_for_optimization2(request: TrafficSimulationPredictRequestDto):
     """Extracts all vehicle speeds, distances, and assigns a small positive acceleration per leg.
@@ -406,15 +404,16 @@ def compute_pareto_solution2(leg_data, current_phase, delta_t, saturation_flow_r
 
 #######################################
 
-
-
-
-
-
-
-
-
-
+def log_results_to_file(map_number):
+    filename = f"traffic_log_map_{map_number}.txt"
+    with open(filename, "w") as f:
+        f.write(f"Results for map {map_number} at tick {tick_count}:\n")
+        f.write("Signal state durations (in ticks):\n")
+        for signal, states in signal_state_durations.items():
+            f.write(f"Signal {signal}: {states}\n")
+        f.write("\nActive group durations (in ticks):\n")
+        for signal, ticks in active_group_durations.items():
+            f.write(f"Signal {signal}: {ticks} ticks in active group\n")
 
 ################################################
 
@@ -466,9 +465,6 @@ def hello():
 @app.get('/')
 def index():
     return "Your endpoint is running!"
-
-
-
 
 @app.post('/predict', response_model=TrafficSimulationPredictResponseDto)
 def predict_endpoint(request: TrafficSimulationPredictRequestDto):
@@ -677,17 +673,6 @@ def predict_endpoint(request: TrafficSimulationPredictRequestDto):
         # Return the updated signals to the simulation
         response = TrafficSimulationPredictResponseDto(signals=next_signals)
         return response
-
-def log_results_to_file(map_number):
-    filename = f"traffic_log_map_{map_number}.txt"
-    with open(filename, "w") as f:
-        f.write(f"Results for map {map_number} at tick {tick_count}:\n")
-        f.write("Signal state durations (in ticks):\n")
-        for signal, states in signal_state_durations.items():
-            f.write(f"Signal {signal}: {states}\n")
-        f.write("\nActive group durations (in ticks):\n")
-        for signal, ticks in active_group_durations.items():
-            f.write(f"Signal {signal}: {ticks} ticks in active group\n")
 
 if __name__ == '__main__':
     uvicorn.run(

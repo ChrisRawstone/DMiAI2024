@@ -530,3 +530,7 @@ Parameters: {'delta_t': 10.0, 'saturation_flow_rate': 1.5118192976972202, 'yello
 Total score: 10756.289404581477
 Standard Deviation: 677.1267940303857
 ========================================
+Parameters: {'delta_t': 10.0, 'saturation_flow_rate': 1.6644764498398508, 'yellow_time': 3.0, 'min_green_time': 6.0, 'max_green_time': 20, 'stay_will': 0.89}
+Total score: 10765.08225298202
+Standard Deviation: 561.7207933669382
+========================================

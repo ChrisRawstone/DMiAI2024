@@ -9,7 +9,7 @@ from collections import defaultdict, deque
 from loguru import logger
 
 # Import necessary functions
-from pareto import (
+from sim.run_sim import (
     extract_data_for_optimization,
     estimate_acceleration_by_distance,
     estimate_queue_length,
