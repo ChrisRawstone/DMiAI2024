@@ -89,7 +89,7 @@ The first step involves hyperparameter tuning using the script `hyperparameter_o
 
 ## 2. Retraining and Evaluation
 
-After obtaining the optimal hyperparameters and models, we proceed to retrain and evaluate the models.
+After obtaining the optimal hyperparameters and models, we proceed to retrain and evaluate the models, `train_model.py`.
 
 - **Retraining with Optimal Parameters**: Utilize the saved models and their corresponding JSON files containing the hyperparameters to retrain the models.
 
@@ -101,7 +101,7 @@ After obtaining the optimal hyperparameters and models, we proceed to retrain an
 
 ## 3. Ensemble Predictions
 
-The last step involves generating ensemble predictions using the best-performing models.
+The last step involves generating ensemble predictions using the best-performing models, `predict_ensemble_model.py`
 
 - **Selecting Top Models**: Choose the best five models based on their performance metrics from the validation step.
 

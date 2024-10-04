@@ -6,7 +6,6 @@ from src.utils import calculate_custom_score
 from utils import get_model
 import numpy as np
 
-
 # Device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
