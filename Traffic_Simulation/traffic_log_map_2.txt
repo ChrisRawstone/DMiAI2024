@@ -1,0 +1,22 @@
+Results for map 2 at tick 26:
+Signal state durations (in ticks):
+Signal A1: defaultdict(<class 'int'>, {'red': 12, 'redamber': 2, 'green': 8, 'amber': 4})
+Signal A1RightTurn: defaultdict(<class 'int'>, {'red': 12, 'redamber': 2, 'green': 8, 'amber': 4})
+Signal A1LeftTurn: defaultdict(<class 'int'>, {'red': 12, 'redamber': 2, 'green': 8, 'amber': 4})
+Signal A2: defaultdict(<class 'int'>, {'red': 21, 'redamber': 2, 'green': 3})
+Signal A2RightTurn: defaultdict(<class 'int'>, {'red': 21, 'redamber': 2, 'green': 3})
+Signal A2LeftTurn: defaultdict(<class 'int'>, {'red': 21, 'redamber': 2, 'green': 3})
+Signal B1: defaultdict(<class 'int'>, {'red': 26})
+Signal B1RightTurn: defaultdict(<class 'int'>, {'red': 26})
+Signal B2: defaultdict(<class 'int'>, {'red': 26})
+
+Active group durations (in ticks):
+Signal A1: 10 ticks in active group
+Signal A1RightTurn: 10 ticks in active group
+Signal A1LeftTurn: 10 ticks in active group
+Signal A2: 10 ticks in active group
+Signal A2RightTurn: 10 ticks in active group
+Signal A2LeftTurn: 10 ticks in active group
+Signal B1: 6 ticks in active group
+Signal B1RightTurn: 6 ticks in active group
+Signal B2: 6 ticks in active group

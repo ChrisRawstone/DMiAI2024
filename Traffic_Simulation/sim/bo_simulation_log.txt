@@ -1,0 +1,536 @@
+Parameters: {'delta_t': 15, 'saturation_flow_rate': 1.8, 'yellow_time': 4, 'min_green_time': 15, 'max_green_time': 45, 'stay_will': 0.6}
+Total score: 12767.341935934364
+========================================
+Parameters: {'delta_t': 9, 'saturation_flow_rate': 0.6, 'yellow_time': 2, 'min_green_time': 9, 'max_green_time': 50, 'stay_will': 0.7}
+Total score: 16943.45043032566
+========================================
+Parameters: {'delta_t': 15, 'saturation_flow_rate': 1.8, 'yellow_time': 4, 'min_green_time': 12, 'max_green_time': 50, 'stay_will': 0.6}
+Total score: 13227.753265330586
+========================================
+Parameters: {'delta_t': 11, 'saturation_flow_rate': 1.8, 'yellow_time': 4, 'min_green_time': 15, 'max_green_time': 50, 'stay_will': 0.6}
+Total score: 15294.842957570858
+========================================
+Parameters: {'delta_t': 15, 'saturation_flow_rate': 1.8, 'yellow_time': 4, 'min_green_time': 6, 'max_green_time': 50, 'stay_will': 0.6}
+Total score: 12553.995526242954
+========================================
+Parameters: {'delta_t': 15, 'saturation_flow_rate': 0.8, 'yellow_time': 4, 'min_green_time': 6, 'max_green_time': 50, 'stay_will': 0.6}
+Total score: 10151.530581209056
+========================================
+Parameters: {'delta_t': 15, 'saturation_flow_rate': 0.8, 'yellow_time': 4, 'min_green_time': 6, 'max_green_time': 35, 'stay_will': 0.6}
+Total score: 11859.681336264533
+========================================
+Parameters: {'delta_t': 15, 'saturation_flow_rate': 0.8, 'yellow_time': 4, 'min_green_time': 6, 'max_green_time': 30, 'stay_will': 0.6}
+Total score: 9220.317003128475
+========================================
+Parameters: {'delta_t': 15, 'saturation_flow_rate': 0.8, 'yellow_time': 2, 'min_green_time': 9, 'max_green_time': 30, 'stay_will': 0.7}
+Total score: 10198.515755575772
+========================================
+Parameters: {'delta_t': 11, 'saturation_flow_rate': 0.8, 'yellow_time': 4, 'min_green_time': 12, 'max_green_time': 30, 'stay_will': 0.6}
+Total score: 10665.239193166724
+========================================
+Parameters: {'delta_t': 15, 'saturation_flow_rate': 0.8, 'yellow_time': 4, 'min_green_time': 6, 'max_green_time': 45, 'stay_will': 0.6}
+Total score: 10033.726644511811
+========================================
+Parameters: {'delta_t': 15, 'saturation_flow_rate': 0.8, 'yellow_time': 4, 'min_green_time': 6, 'max_green_time': 30, 'stay_will': 0.8}
+Total score: 10126.111296715004
+========================================
+Parameters: {'delta_t': 15, 'saturation_flow_rate': 0.8, 'yellow_time': 2, 'min_green_time': 6, 'max_green_time': 30, 'stay_will': 0.6}
+Total score: 11041.063988549311
+========================================
+Parameters: {'delta_t': 15, 'saturation_flow_rate': 0.8, 'yellow_time': 4, 'min_green_time': 9, 'max_green_time': 30, 'stay_will': 0.7}
+Total score: 10817.049212095179
+========================================
+Parameters: {'delta_t': 15, 'saturation_flow_rate': 0.8, 'yellow_time': 4, 'min_green_time': 6, 'max_green_time': 30, 'stay_will': 0.9}
+Total score: 11095.849629256012
+========================================
+Parameters: {'delta_t': 15, 'saturation_flow_rate': 0.8, 'yellow_time': 4, 'min_green_time': 15, 'max_green_time': 30, 'stay_will': 0.6}
+Total score: 13527.740363451203
+========================================
+Parameters: {'delta_t': 21, 'saturation_flow_rate': 0.8, 'yellow_time': 4, 'min_green_time': 6, 'max_green_time': 30, 'stay_will': 0.6}
+Total score: 12038.287070673545
+========================================
+Parameters: {'delta_t': 15, 'saturation_flow_rate': 0.8, 'yellow_time': 4, 'min_green_time': 6, 'max_green_time': 30, 'stay_will': 0.5}
+Total score: 14188.94791726671
+========================================
+Parameters: {'delta_t': 5, 'saturation_flow_rate': 2.0, 'yellow_time': 4, 'min_green_time': 6, 'max_green_time': 30, 'stay_will': 0.6}
+Total score: 9088.32716100686
+========================================
+Parameters: {'delta_t': 17, 'saturation_flow_rate': 0.8, 'yellow_time': 4, 'min_green_time': 6, 'max_green_time': 30, 'stay_will': 0.6}
+Total score: 11084.62669720372
+========================================
+Parameters: {'delta_t': 5, 'saturation_flow_rate': 1.4, 'yellow_time': 4, 'min_green_time': 6, 'max_green_time': 30, 'stay_will': 0.6}
+Total score: 9474.25483399594
+========================================
+Parameters: {'delta_t': 11, 'saturation_flow_rate': 2.0, 'yellow_time': 4, 'min_green_time': 6, 'max_green_time': 30, 'stay_will': 0.6}
+Total score: 13559.631675121462
+========================================
+Parameters: {'delta_t': 19, 'saturation_flow_rate': 2.0, 'yellow_time': 4, 'min_green_time': 12, 'max_green_time': 30, 'stay_will': 0.6}
+Total score: 15417.600192565827
+========================================
+Parameters: {'delta_t': 5, 'saturation_flow_rate': 2.0, 'yellow_time': 4, 'min_green_time': 6, 'max_green_time': 35, 'stay_will': 0.6}
+Total score: 10920.670125841461
+========================================
+Parameters: {'delta_t': 5, 'saturation_flow_rate': 0.6, 'yellow_time': 4, 'min_green_time': 6, 'max_green_time': 30, 'stay_will': 0.9}
+Total score: 13703.86672849018
+========================================
+Parameters: {'delta_t': 5, 'saturation_flow_rate': 2.0, 'yellow_time': 4, 'min_green_time': 6, 'max_green_time': 30, 'stay_will': 0.8}
+Total score: 11328.638110879223
+========================================
+Parameters: {'delta_t': 5, 'saturation_flow_rate': 1.8, 'yellow_time': 4, 'min_green_time': 6, 'max_green_time': 50, 'stay_will': 0.6}
+Total score: 9695.993632415724
+========================================
+Parameters: {'delta_t': 5, 'saturation_flow_rate': 1.8, 'yellow_time': 2, 'min_green_time': 6, 'max_green_time': 30, 'stay_will': 0.6}
+Total score: 9882.177154866713
+========================================
+Parameters: {'delta_t': 5, 'saturation_flow_rate': 1.0, 'yellow_time': 4, 'min_green_time': 6, 'max_green_time': 50, 'stay_will': 0.6}
+Total score: 10954.74414643192
+========================================
+Parameters: {'delta_t': 5, 'saturation_flow_rate': 0.8, 'yellow_time': 4, 'min_green_time': 6, 'max_green_time': 50, 'stay_will': 0.6}
+Total score: 14763.48098269174
+========================================
+Parameters: {'delta_t': 5, 'saturation_flow_rate': 1.2, 'yellow_time': 4, 'min_green_time': 6, 'max_green_time': 30, 'stay_will': 0.6}
+Total score: 10141.491639706153
+========================================
+Parameters: {'delta_t': 5, 'saturation_flow_rate': 1.4, 'yellow_time': 4, 'min_green_time': 6, 'max_green_time': 40, 'stay_will': 0.6}
+Total score: 10080.797632896407
+========================================
+Parameters: {'delta_t': 5, 'saturation_flow_rate': 1.6, 'yellow_time': 4, 'min_green_time': 6, 'max_green_time': 30, 'stay_will': 0.6}
+Total score: 9673.831558996108
+========================================
+Parameters: {'delta_t': 5, 'saturation_flow_rate': 2.0, 'yellow_time': 3, 'min_green_time': 6, 'max_green_time': 45, 'stay_will': 0.6}
+Total score: 9775.34636624564
+========================================
+Parameters: {'delta_t': 15, 'saturation_flow_rate': 0.8, 'yellow_time': 3, 'min_green_time': 6, 'max_green_time': 30, 'stay_will': 0.7}
+Total score: 10024.290902615818
+========================================
+Parameters: {'delta_t': 15, 'saturation_flow_rate': 0.8, 'yellow_time': 2, 'min_green_time': 12, 'max_green_time': 50, 'stay_will': 0.7}
+Total score: 10988.244587175886
+========================================
+Parameters: {'delta_t': 11, 'saturation_flow_rate': 0.8, 'yellow_time': 2, 'min_green_time': 9, 'max_green_time': 35, 'stay_will': 0.7}
+Total score: 11458.231852680987
+========================================
+Parameters: {'delta_t': 5, 'saturation_flow_rate': 1.8, 'yellow_time': 4, 'min_green_time': 6, 'max_green_time': 30, 'stay_will': 0.6}
+Total score: 10743.543182812606
+========================================
+Parameters: {'delta_t': 15, 'saturation_flow_rate': 0.8, 'yellow_time': 2, 'min_green_time': 6, 'max_green_time': 35, 'stay_will': 0.8}
+Total score: 11009.310906829085
+========================================
+Parameters: {'delta_t': 9, 'saturation_flow_rate': 0.8, 'yellow_time': 2, 'min_green_time': 6, 'max_green_time': 40, 'stay_will': 0.6}
+Total score: 9869.865978083637
+========================================
+Parameters: {'delta_t': 9, 'saturation_flow_rate': 0.8, 'yellow_time': 3, 'min_green_time': 6, 'max_green_time': 35, 'stay_will': 0.6}
+Total score: 10635.716962287981
+========================================
+Parameters: {'delta_t': 7, 'saturation_flow_rate': 0.8, 'yellow_time': 2, 'min_green_time': 6, 'max_green_time': 50, 'stay_will': 0.6}
+Total score: 9932.789734092199
+========================================
+Parameters: {'delta_t': 13, 'saturation_flow_rate': 0.8, 'yellow_time': 2, 'min_green_time': 6, 'max_green_time': 40, 'stay_will': 0.6}
+Total score: 10153.708220490349
+========================================
+Parameters: {'delta_t': 8, 'saturation_flow_rate': 1.8, 'yellow_time': 6, 'min_green_time': 15, 'max_green_time': 35, 'stay_will': 0.65}
+Total score: 12724.65094573139
+========================================
+Parameters: {'delta_t': 6, 'saturation_flow_rate': 0.6, 'yellow_time': 4, 'min_green_time': 9, 'max_green_time': 40, 'stay_will': 0.65}
+Total score: 12297.006508258944
+========================================
+Parameters: {'delta_t': 10, 'saturation_flow_rate': 0.6, 'yellow_time': 4, 'min_green_time': 9, 'max_green_time': 40, 'stay_will': 0.65}
+Total score: 12803.316592390722
+========================================
+Parameters: {'delta_t': 8, 'saturation_flow_rate': 1.8, 'yellow_time': 6, 'min_green_time': 15, 'max_green_time': 35, 'stay_will': 0.65}
+Total score: 12568.479238885071
+========================================
+Parameters: {'delta_t': 6, 'saturation_flow_rate': 0.6, 'yellow_time': 4, 'min_green_time': 9, 'max_green_time': 40, 'stay_will': 0.65}
+Total score: 12843.747052351757
+========================================
+Parameters: {'delta_t': 8, 'saturation_flow_rate': 1.6, 'yellow_time': 6, 'min_green_time': 6, 'max_green_time': 35, 'stay_will': 0.6}
+Total score: 10462.117190134399
+========================================
+Parameters: {'delta_t': 7, 'saturation_flow_rate': 1.6, 'yellow_time': 6, 'min_green_time': 6, 'max_green_time': 35, 'stay_will': 0.6}
+Total score: 10509.233525975376
+========================================
+Parameters: {'delta_t': 8, 'saturation_flow_rate': 1.8, 'yellow_time': 6, 'min_green_time': 15, 'max_green_time': 35, 'stay_will': 0.65}
+Total score: 11860.98660431666
+========================================
+Parameters: {'delta_t': 6, 'saturation_flow_rate': 0.6, 'yellow_time': 4, 'min_green_time': 9, 'max_green_time': 40, 'stay_will': 0.65}
+Total score: 12423.988690290338
+========================================
+Parameters: {'delta_t': 8, 'saturation_flow_rate': 1.6, 'yellow_time': 6, 'min_green_time': 6, 'max_green_time': 35, 'stay_will': 0.6}
+Total score: 10012.382647996852
+========================================
+Parameters: {'delta_t': 7, 'saturation_flow_rate': 1.6, 'yellow_time': 6, 'min_green_time': 6, 'max_green_time': 35, 'stay_will': 0.6}
+Total score: 10086.462131775079
+========================================
+Parameters: {'delta_t': 8, 'saturation_flow_rate': 1.6, 'yellow_time': 3, 'min_green_time': 6, 'max_green_time': 35, 'stay_will': 0.6}
+Total score: 10834.736107259037
+========================================
+Parameters: {'delta_t': 6, 'saturation_flow_rate': 1.6, 'yellow_time': 6, 'min_green_time': 6, 'max_green_time': 35, 'stay_will': 0.6}
+Total score: 10049.761240254995
+========================================
+Parameters: {'delta_t': 8, 'saturation_flow_rate': 1.6, 'yellow_time': 6, 'min_green_time': 6, 'max_green_time': 20, 'stay_will': 0.6}
+Total score: 12178.020739759178
+========================================
+Parameters: {'delta_t': 6, 'saturation_flow_rate': 1.6, 'yellow_time': 4, 'min_green_time': 6, 'max_green_time': 35, 'stay_will': 0.6}
+Total score: 9823.13138643287
+========================================
+Parameters: {'delta_t': 8, 'saturation_flow_rate': 1.6, 'yellow_time': 4, 'min_green_time': 6, 'max_green_time': 35, 'stay_will': 0.6}
+Total score: 10871.229335505095
+========================================
+Parameters: {'delta_t': 4, 'saturation_flow_rate': 1.6, 'yellow_time': 4, 'min_green_time': 6, 'max_green_time': 35, 'stay_will': 0.6}
+Total score: 10139.009191470484
+========================================
+Parameters: {'delta_t': 6, 'saturation_flow_rate': 1.6, 'yellow_time': 5, 'min_green_time': 6, 'max_green_time': 35, 'stay_will': 0.6}
+Total score: 9552.90012835934
+========================================
+Parameters: {'delta_t': 10, 'saturation_flow_rate': 1.6, 'yellow_time': 5, 'min_green_time': 6, 'max_green_time': 35, 'stay_will': 0.6}
+Total score: 11425.103561214122
+========================================
+Parameters: {'delta_t': 9, 'saturation_flow_rate': 1.6, 'yellow_time': 5, 'min_green_time': 6, 'max_green_time': 35, 'stay_will': 0.6}
+Total score: 11171.905085011635
+========================================
+Parameters: {'delta_t': 5, 'saturation_flow_rate': 1.6, 'yellow_time': 4, 'min_green_time': 6, 'max_green_time': 35, 'stay_will': 0.6}
+Total score: 10342.811200330409
+========================================
+Parameters: {'delta_t': 6, 'saturation_flow_rate': 1.4, 'yellow_time': 5, 'min_green_time': 6, 'max_green_time': 35, 'stay_will': 0.6}
+Total score: 9554.967317589892
+========================================
+Parameters: {'delta_t': 6, 'saturation_flow_rate': 2.0, 'yellow_time': 3, 'min_green_time': 6, 'max_green_time': 35, 'stay_will': 0.6}
+Total score: 10987.255533081407
+========================================
+Parameters: {'delta_t': 6, 'saturation_flow_rate': 0.6, 'yellow_time': 5, 'min_green_time': 6, 'max_green_time': 35, 'stay_will': 0.6}
+Total score: 13413.146870303599
+========================================
+Parameters: {'delta_t': 6, 'saturation_flow_rate': 1.4, 'yellow_time': 6, 'min_green_time': 6, 'max_green_time': 35, 'stay_will': 0.6}
+Total score: 9553.233922594676
+========================================
+Parameters: {'delta_t': 6, 'saturation_flow_rate': 1.2, 'yellow_time': 5, 'min_green_time': 6, 'max_green_time': 35, 'stay_will': 0.6}
+Total score: 10161.982887123313
+========================================
+Parameters: {'delta_t': 6, 'saturation_flow_rate': 0.8, 'yellow_time': 5, 'min_green_time': 6, 'max_green_time': 35, 'stay_will': 0.6}
+Total score: 10693.860350293153
+========================================
+Parameters: {'delta_t': 5, 'saturation_flow_rate': 1.0, 'yellow_time': 5, 'min_green_time': 6, 'max_green_time': 35, 'stay_will': 0.6}
+Total score: 10393.90349421068
+========================================
+Parameters: {'delta_t': 6, 'saturation_flow_rate': 1.4, 'yellow_time': 6, 'min_green_time': 9, 'max_green_time': 35, 'stay_will': 0.6}
+Total score: 10386.828816486042
+========================================
+Parameters: {'delta_t': 6, 'saturation_flow_rate': 1.4, 'yellow_time': 5, 'min_green_time': 12, 'max_green_time': 35, 'stay_will': 0.6}
+Total score: 11328.538199613691
+========================================
+Parameters: {'delta_t': 7, 'saturation_flow_rate': 2.0, 'yellow_time': 5, 'min_green_time': 9, 'max_green_time': 40, 'stay_will': 0.8}
+Total score: 11099.545706266128
+========================================
+Parameters: {'delta_t': 6, 'saturation_flow_rate': 1.4, 'yellow_time': 6, 'min_green_time': 6, 'max_green_time': 35, 'stay_will': 0.8}
+Total score: 12794.585617831928
+========================================
+Parameters: {'yellow_time': 5.185689236450036, 'saturation_flow_rate': 1.5688531497162035, 'delta_t': 5.929534741147308}
+Total score: 10177.88367932625
+========================================
+Parameters: {'yellow_time': 5.185689236450036, 'saturation_flow_rate': 1.5688531497162035, 'delta_t': 5.929534741147308}
+Total score: 10118.528610889907
+Standard Deviation: 453.9745605188186
+========================================
+Parameters: {'yellow_time': 5.694503477568251, 'saturation_flow_rate': 1.5247127393571944, 'delta_t': 5.36125804875124}
+Total score: 10011.000384799674
+Standard Deviation: 643.3149781635287
+========================================
+Parameters: {'yellow_time': 5.694303023087745, 'saturation_flow_rate': 1.504886657884223, 'delta_t': 5.421690743439786}
+Total score: 9977.225546618909
+Standard Deviation: 506.6094876271025
+========================================
+Parameters: {'yellow_time': 5.694359379512738, 'saturation_flow_rate': 1.4914525779760106, 'delta_t': 5.42437978635565}
+Total score: 10064.814623876342
+Standard Deviation: 582.9247102133164
+========================================
+Parameters: {'yellow_time': 5.696839726243427, 'saturation_flow_rate': 1.5054733148793673, 'delta_t': 5.776444569803803}
+Total score: 17419.59731550143
+Standard Deviation: 24791.530945954368
+========================================
+Parameters: {'yellow_time': 5.66393161487363, 'saturation_flow_rate': 1.5827008243352578, 'delta_t': 5.3369955566975795}
+Total score: 9838.446488697095
+Standard Deviation: 474.66406839639916
+========================================
+Parameters: {'yellow_time': 4.726119785029854, 'saturation_flow_rate': 1.6, 'delta_t': 6.025767983611253}
+Total score: 9943.815854579354
+Standard Deviation: 502.6991353543931
+========================================
+Parameters: {'yellow_time': 4.736404996894094, 'saturation_flow_rate': 1.6, 'delta_t': 5.653401274096369}
+Total score: 10001.160689987943
+Standard Deviation: 717.2713916246893
+========================================
+Parameters: {'yellow_time': 5.075659831788379, 'saturation_flow_rate': 1.6, 'delta_t': 5.308979876734613}
+Total score: 9831.871408198973
+Standard Deviation: 495.16645362735227
+========================================
+Parameters: {'yellow_time': 6.0, 'saturation_flow_rate': 1.6, 'delta_t': 5.0465821298156115}
+Total score: 10069.655775804686
+Standard Deviation: 381.6106435481755
+========================================
+Parameters: {'yellow_time': 4.0, 'saturation_flow_rate': 1.4, 'delta_t': 4.9}
+Total score: 10148.922567724067
+Standard Deviation: 426.26516252036515
+========================================
+Parameters: {'yellow_time': 5.363960543943844, 'saturation_flow_rate': 1.6, 'delta_t': 5.014861859419197}
+Total score: 10159.920627849064
+Standard Deviation: 379.83988282654144
+========================================
+Parameters: {'yellow_time': 4.0, 'saturation_flow_rate': 1.6, 'delta_t': 5.565419797952156}
+Total score: 10052.46206645343
+Standard Deviation: 564.7185680954251
+========================================
+Parameters: {'yellow_time': 6.0, 'saturation_flow_rate': 1.4, 'delta_t': 5.173945294877819}
+Total score: 10573.67537953926
+Standard Deviation: 730.8102011447066
+========================================
+Parameters: {'yellow_time': 6.0, 'saturation_flow_rate': 1.4, 'delta_t': 6.1}
+Total score: 10157.971009060646
+Standard Deviation: 476.84591352375475
+========================================
+Parameters: {'yellow_time': 6.0, 'saturation_flow_rate': 1.4, 'delta_t': 5.612794946226736}
+Total score: 9785.6888202626
+Standard Deviation: 495.6294060726404
+========================================
+Parameters: {'yellow_time': 6.0, 'saturation_flow_rate': 1.4, 'delta_t': 5.9745789714726865}
+Total score: 10071.296947896017
+Standard Deviation: 387.0878913348639
+========================================
+Parameters: {'yellow_time': 6.0, 'saturation_flow_rate': 1.6, 'delta_t': 5.496415683639887}
+Total score: 9900.35256301502
+Standard Deviation: 553.7755866909561
+========================================
+Parameters: {'yellow_time': 5.758478894564533, 'saturation_flow_rate': 1.583113919970663, 'delta_t': 5.243615560597157}
+Total score: 9784.976705063114
+Standard Deviation: 713.6727667418089
+========================================
+Parameters: {'yellow_time': 6.0, 'saturation_flow_rate': 1.4, 'delta_t': 4.950379078953953}
+Total score: 10271.189740663458
+Standard Deviation: 571.5820631488233
+========================================
+Parameters: {'yellow_time': 4.0, 'saturation_flow_rate': 1.6, 'delta_t': 5.102720247094635}
+Total score: 10060.096558662635
+Standard Deviation: 370.9519309448327
+========================================
+Parameters: {'yellow_time': 4.0, 'saturation_flow_rate': 1.4, 'delta_t': 5.2717451481636175}
+Total score: 10231.841178104623
+Standard Deviation: 461.08836987701693
+========================================
+Parameters: {'yellow_time': 4.0, 'saturation_flow_rate': 1.6, 'delta_t': 5.618293067116904}
+Total score: 9896.899105388484
+Standard Deviation: 726.9673156973935
+========================================
+Parameters: {'yellow_time': 4.238138425753881, 'saturation_flow_rate': 1.4, 'delta_t': 5.525783852600966}
+Total score: 10068.605763786374
+Standard Deviation: 666.8036375014586
+========================================
+Parameters: {'yellow_time': 4.0, 'saturation_flow_rate': 1.4, 'delta_t': 6.057895114477226}
+Total score: 9960.407303766997
+Standard Deviation: 455.0191069944845
+========================================
+Parameters: {'yellow_time': 4.0, 'saturation_flow_rate': 1.4, 'delta_t': 5.468045702866108}
+Total score: 10046.550948470245
+Standard Deviation: 441.83156524844765
+========================================
+Parameters: {'yellow_time': 5.6899605742740915, 'saturation_flow_rate': 1.5026507880509141, 'delta_t': 4.97238620359133}
+Total score: 9930.847008760464
+Standard Deviation: 382.8105821138951
+========================================
+Parameters: {'yellow_time': 5.266134606370855, 'saturation_flow_rate': 1.5046722943977389, 'delta_t': 5.526707083147207}
+Total score: 10152.810361106951
+Standard Deviation: 571.9067034898156
+========================================
+Parameters: {'yellow_time': 6.0, 'saturation_flow_rate': 1.6, 'delta_t': 5.235446534412435}
+Total score: 10016.83127854235
+Standard Deviation: 452.3034271191373
+========================================
+Parameters: {'yellow_time': 6.0, 'saturation_flow_rate': 1.4, 'delta_t': 5.628947094829083}
+Total score: 10050.163826451275
+Standard Deviation: 459.20923551390865
+========================================
+Parameters: {'yellow_time': 6.0, 'saturation_flow_rate': 1.6, 'delta_t': 5.3256389051872715}
+Total score: 9928.975237959616
+Standard Deviation: 511.9983548390593
+========================================
+Parameters: {'yellow_time': 4.938810211523216, 'saturation_flow_rate': 1.5047258745374816, 'delta_t': 5.315223768775683}
+Total score: 10092.81614610072
+Standard Deviation: 559.7499508710955
+========================================
+Parameters: {'yellow_time': 6.0, 'saturation_flow_rate': 1.6, 'delta_t': 5.6089474777525465}
+Total score: 9914.898987021066
+Standard Deviation: 395.09160952262783
+========================================
+Parameters: {'yellow_time': 6.0, 'saturation_flow_rate': 1.6, 'delta_t': 5.261318936499383}
+Total score: 10132.298605769405
+Standard Deviation: 582.6348905472147
+========================================
+Parameters: {'yellow_time': 4.0, 'saturation_flow_rate': 1.4, 'delta_t': 5.076427014822826}
+Total score: 10267.221987922165
+Standard Deviation: 421.2124252972891
+========================================
+Parameters: {'yellow_time': 4.0, 'saturation_flow_rate': 1.4, 'delta_t': 5.597154679262969}
+Total score: 9953.231393939428
+Standard Deviation: 564.8539169187834
+========================================
+Parameters: {'yellow_time': 4.0, 'saturation_flow_rate': 1.6, 'delta_t': 5.951995899039734}
+Total score: 9668.322471727066
+Standard Deviation: 539.3525839357288
+========================================
+Parameters: {'yellow_time': 4.0, 'saturation_flow_rate': 1.6, 'delta_t': 5.955368157431922}
+Total score: 10001.024112751535
+Standard Deviation: 569.7587395103849
+========================================
+Parameters: {'yellow_time': 4.0, 'saturation_flow_rate': 1.6, 'delta_t': 5.389042853641088}
+Total score: 10016.815023777877
+Standard Deviation: 442.3936647350516
+========================================
+Parameters: {'yellow_time': 6.0, 'saturation_flow_rate': 1.6, 'delta_t': 6.066578390726519}
+Total score: 9884.062642437259
+Standard Deviation: 484.4738012341224
+========================================
+Parameters: {'yellow_time': 6.0, 'saturation_flow_rate': 1.6, 'delta_t': 6.042596199810221}
+Total score: 9919.997652885233
+Standard Deviation: 447.662561251494
+========================================
+Parameters: {'yellow_time': 4.0, 'saturation_flow_rate': 1.6, 'delta_t': 5.220239646968643}
+Total score: 10280.900847228733
+Standard Deviation: 529.23687345763
+========================================
+Parameters: {'yellow_time': 6.0, 'saturation_flow_rate': 1.4, 'delta_t': 5.949393700370965}
+Total score: 10052.739695185226
+Standard Deviation: 570.3037786567835
+========================================
+Parameters: {'yellow_time': 4.0, 'saturation_flow_rate': 1.6, 'delta_t': 5.998655767525309}
+Total score: 10065.543183621989
+Standard Deviation: 426.2433660804083
+========================================
+Parameters: {'yellow_time': 6.0, 'saturation_flow_rate': 1.6, 'delta_t': 5.4541289529348}
+Total score: 10261.112341659877
+Standard Deviation: 386.209486998775
+========================================
+Parameters: {'yellow_time': 6.0, 'saturation_flow_rate': 1.6, 'delta_t': 5.127509327516846}
+Total score: 10001.075602011353
+Standard Deviation: 373.70583280818903
+========================================
+Parameters: {'yellow_time': 4.0, 'saturation_flow_rate': 1.4, 'delta_t': 4.989346267694768}
+Total score: 10093.998110770559
+Standard Deviation: 439.12058821507316
+========================================
+Parameters: {'yellow_time': 4.0, 'saturation_flow_rate': 1.4, 'delta_t': 5.343471581441001}
+Total score: 10251.858489178143
+Standard Deviation: 579.7494544616441
+========================================
+Parameters: {'yellow_time': 4.0, 'saturation_flow_rate': 1.6, 'delta_t': 5.630072027230301}
+Total score: 9802.677963570122
+Standard Deviation: 437.8608562108129
+========================================
+Parameters: {'yellow_time': 4.0, 'saturation_flow_rate': 1.6, 'delta_t': 6.0747422843954375}
+Total score: 10009.325837949951
+Standard Deviation: 631.6053188675753
+========================================
+Parameters: {'delta_t': 7.557067709350111, 'saturation_flow_rate': 1.7819720480134245, 'yellow_time': 5.573836852868271, 'min_green_time': 13.62526564905713, 'max_green_time': 30, 'stay_will': 0.656065048771226}
+Total score: 11804.692757123836
+Standard Deviation: 378.9322817586347
+========================================
+Parameters: {'delta_t': 5.785207639266834, 'saturation_flow_rate': 0.6793981682444205, 'yellow_time': 3.81796888374034, 'min_green_time': 10.29898605589215, 'max_green_time': 35, 'stay_will': 0.6923913255025218}
+Total score: 13364.032078744081
+Standard Deviation: 632.3532476025182
+========================================
+Parameters: {'delta_t': 7.557079527940773, 'saturation_flow_rate': 1.7819713344275496, 'yellow_time': 5.433247833168012, 'min_green_time': 13.61784971960991, 'max_green_time': 20, 'stay_will': 0.6560845121559862}
+Total score: 13434.881312336904
+Standard Deviation: 559.3353958571973
+========================================
+Parameters: {'delta_t': 7.313228917264304, 'saturation_flow_rate': 1.701916067417526, 'yellow_time': 5.554086114266621, 'min_green_time': 13.83784914118786, 'max_green_time': 30, 'stay_will': 0.6566786330370439}
+Total score: 11966.10722471131
+Standard Deviation: 404.9764496921123
+========================================
+Parameters: {'delta_t': 4.0, 'saturation_flow_rate': 0.6, 'yellow_time': 3.0, 'min_green_time': 6.0, 'max_green_time': 30, 'stay_will': 0.89}
+Total score: 13411.47204179944
+Standard Deviation: 388.7300612621665
+========================================
+Parameters: {'delta_t': 10.0, 'saturation_flow_rate': 2.0, 'yellow_time': 6.0, 'min_green_time': 8.512957605182061, 'max_green_time': 30, 'stay_will': 0.5772435702572656}
+Total score: 14981.403389526919
+Standard Deviation: 837.1766055516782
+========================================
+Parameters: {'delta_t': 7.652349725643031, 'saturation_flow_rate': 1.6909872261611079, 'yellow_time': 5.58743258723689, 'min_green_time': 14.987330265865586, 'max_green_time': 30, 'stay_will': 0.6558256693892737}
+Total score: 12531.796581010187
+Standard Deviation: 713.1597215885331
+========================================
+Parameters: {'delta_t': 4.48878933175155, 'saturation_flow_rate': 1.8318786953531414, 'yellow_time': 5.829879044935964, 'min_green_time': 13.498325622737632, 'max_green_time': 30, 'stay_will': 0.6556756700147646}
+Total score: 11700.250439131267
+Standard Deviation: 433.76407724981425
+========================================
+Parameters: {'delta_t': 4.791781202558443, 'saturation_flow_rate': 1.8327224079634856, 'yellow_time': 3.1340981374412884, 'min_green_time': 13.32430589130908, 'max_green_time': 30, 'stay_will': 0.6551075664378702}
+Total score: 11767.911000247257
+Standard Deviation: 785.519735715043
+========================================
+Parameters: {'delta_t': 10.0, 'saturation_flow_rate': 2.0, 'yellow_time': 6.0, 'min_green_time': 11.568981423428507, 'max_green_time': 30, 'stay_will': 0.6550558016150705}
+Total score: 13246.861862635466
+Standard Deviation: 513.444861434313
+========================================
+Parameters: {'delta_t': 4.0, 'saturation_flow_rate': 1.842089092921197, 'yellow_time': 6.0, 'min_green_time': 13.485449761103606, 'max_green_time': 30, 'stay_will': 0.6569112557688045}
+Total score: 11520.16387273917
+Standard Deviation: 394.5318462988713
+========================================
+Parameters: {'delta_t': 4.675903661910785, 'saturation_flow_rate': 1.8566741839668888, 'yellow_time': 4.882571520488901, 'min_green_time': 13.45736538801463, 'max_green_time': 30, 'stay_will': 0.6576065040064467}
+Total score: 11979.680786682695
+Standard Deviation: 741.6415997737374
+========================================
+Parameters: {'delta_t': 4.0, 'saturation_flow_rate': 1.309238075002853, 'yellow_time': 6.0, 'min_green_time': 13.47066928511327, 'max_green_time': 35, 'stay_will': 0.5230493760614066}
+Total score: 16319.934936824413
+Standard Deviation: 1024.570473038264
+========================================
+Parameters: {'delta_t': 4.0, 'saturation_flow_rate': 1.8948636163547148, 'yellow_time': 6.0, 'min_green_time': 13.605246229138608, 'max_green_time': 30, 'stay_will': 0.7462534396720631}
+Total score: 13833.420340795696
+Standard Deviation: 767.4529527907171
+========================================
+Parameters: {'delta_t': 4.0, 'saturation_flow_rate': 1.7883291799818397, 'yellow_time': 6.0, 'min_green_time': 13.558909242213833, 'max_green_time': 30, 'stay_will': 0.6319871558804693}
+Total score: 11808.660952649276
+Standard Deviation: 485.6786533080601
+========================================
+Parameters: {'delta_t': 7.68514477787633, 'saturation_flow_rate': 0.947998048289064, 'yellow_time': 3.0055761340887934, 'min_green_time': 11.692689895982408, 'max_green_time': 25, 'stay_will': 0.8700375795051015}
+Total score: 13116.316371614144
+Standard Deviation: 814.2472678953014
+========================================
+Parameters: {'delta_t': 4.0, 'saturation_flow_rate': 1.2565903330773367, 'yellow_time': 5.7383130349526414, 'min_green_time': 6.0, 'max_green_time': 40, 'stay_will': 0.7850441977106931}
+Total score: 15526.830327329544
+Standard Deviation: 767.5308702471148
+========================================
+Parameters: {'delta_t': 10.0, 'saturation_flow_rate': 2.0, 'yellow_time': 3.0, 'min_green_time': 15.0, 'max_green_time': 20, 'stay_will': 0.89}
+Total score: 12913.328739427117
+Standard Deviation: 1020.7762213282526
+========================================
+Parameters: {'delta_t': 4.0, 'saturation_flow_rate': 0.8352174125052456, 'yellow_time': 5.175143641018571, 'min_green_time': 15.0, 'max_green_time': 15, 'stay_will': 0.7744517349481086}
+Total score: 14740.277759802897
+Standard Deviation: 1447.796170928701
+========================================
+Parameters: {'delta_t': 4.0, 'saturation_flow_rate': 1.653440434119399, 'yellow_time': 5.292207957984304, 'min_green_time': 13.485236720770477, 'max_green_time': 30, 'stay_will': 0.6407456525190628}
+Total score: 12088.695013046361
+Standard Deviation: 892.0853080718015
+========================================
+Parameters: {'delta_t': 4.0, 'saturation_flow_rate': 2.0, 'yellow_time': 6.0, 'min_green_time': 13.784658059883984, 'max_green_time': 30, 'stay_will': 0.6397474230444637}
+Total score: 11647.500879310877
+Standard Deviation: 544.9948300812558
+========================================
+Parameters: {'delta_t': 4.746141921449517, 'saturation_flow_rate': 2.0, 'yellow_time': 6.0, 'min_green_time': 13.467697811578375, 'max_green_time': 25, 'stay_will': 0.6573627800770384}
+Total score: 12235.390077188253
+Standard Deviation: 671.4797876501425
+========================================
+Parameters: {'delta_t': 8.711183965001819, 'saturation_flow_rate': 1.008043228500335, 'yellow_time': 3.0, 'min_green_time': 6.0, 'max_green_time': 20, 'stay_will': 0.89}
+Total score: 12165.201354164301
+Standard Deviation: 723.9837353364611
+========================================
+Parameters: {'delta_t': 4.0, 'saturation_flow_rate': 2.0, 'yellow_time': 6.0, 'min_green_time': 13.4697998116652, 'max_green_time': 30, 'stay_will': 0.6569926763264107}
+Total score: 11781.779619651592
+Standard Deviation: 330.3245157498175
+========================================
+Parameters: {'delta_t': 4.0, 'saturation_flow_rate': 0.6, 'yellow_time': 3.732073729479267, 'min_green_time': 6.0, 'max_green_time': 20, 'stay_will': 0.89}
+Total score: 13435.130332575345
+Standard Deviation: 825.4358866811607
+========================================
+Parameters: {'delta_t': 10.0, 'saturation_flow_rate': 1.5118192976972202, 'yellow_time': 3.0, 'min_green_time': 6.0, 'max_green_time': 20, 'stay_will': 0.89}
+Total score: 10756.289404581477
+Standard Deviation: 677.1267940303857
+========================================
+Parameters: {'delta_t': 10.0, 'saturation_flow_rate': 1.6644764498398508, 'yellow_time': 3.0, 'min_green_time': 6.0, 'max_green_time': 20, 'stay_will': 0.89}
+Total score: 10765.08225298202
+Standard Deviation: 561.7207933669382
+========================================

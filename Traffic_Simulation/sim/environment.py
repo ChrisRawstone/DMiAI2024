@@ -15,6 +15,9 @@ import pathlib
 
 from loguru import logger
 
+sumo_version = "sumo"
+sleep_time = 0
+
 from dtos import (
     TrafficSimulationPredictRequestDto, VehicleDto, SignalDto, LegDto, AllowedGreenSignalCombinationDto
 )
@@ -110,7 +113,7 @@ class TrafficSimulationEnvHandler():
         self._start_time = start_time
         self._test_duration_seconds = test_duration_seconds
         self._model_folder = model_folder
-        self._random = False
+        self._random = True
 
         self.maxdistance = 100
         self.groups = groups
@@ -202,6 +205,7 @@ class TrafficSimulationEnvHandler():
             score += waiting_time
 
             if waiting_time > self.delay_penalty_start_seconds:
+                # print((self.vehicle_waiting_time[vehicle] - self.delay_penalty_start_seconds)**self.delay_penalty_coefficient)
                 score += (self.vehicle_waiting_time[vehicle] - self.delay_penalty_start_seconds)**self.delay_penalty_coefficient
 
 
@@ -373,7 +377,7 @@ class TrafficSimulationEnvHandler():
     def demo(self):
         sumoBinary = checkBinary('sumo')
 
-        logger.info('Traffic simulation - starting sumo....')
+        # logger.info('Traffic simulation - starting sumo....')
 
         sim_instance = uuid4().hex
 
@@ -391,7 +395,7 @@ class TrafficSimulationEnvHandler():
         for i in range(simulationTicks):
             self._run_one_tick()
 
-        logger.info('Traffic simulation - finished....')
+        # logger.info('Traffic simulation - finished....')
 
         self._traci_connection.close()
 
@@ -450,7 +454,7 @@ class TrafficSimulationEnvHandler():
         self._simulation_is_running = True
 
         logger.info('Traffic simulation - starting sumo....')
-        sumoBinary = checkBinary('sumo')
+        sumoBinary = checkBinary(sumo_version)
 
         sim_instance = uuid4().hex
 
@@ -468,17 +472,22 @@ class TrafficSimulationEnvHandler():
             self._run_one_tick()
 
         while True:
-            logger.info(f'Traffic simulation - tick {self.simulation_ticks}....')
+            # if self.simulation_ticks % 50 == 0:
+            #     logger.info(f'Traffic simulation - tick {self.simulation_ticks}....')
+                # print('Reward: ', self._total_score)
             
             if self.simulation_ticks < (self._test_duration_seconds + self.warm_up_ticks):
                 self._run_one_tick()
-                sleep(1)
+                sleep(sleep_time)
             else:
                 self._run_one_tick(terminates_now=True)
                 break
+            
+            
 
         self._traci_connection.close()
         self._simulation_is_running = False
+        # print('Reward: ', self._total_score)
 
 
 
