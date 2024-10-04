@@ -487,7 +487,7 @@ class TrafficSimulationEnvHandler():
 
         self._traci_connection.close()
         self._simulation_is_running = False
-        print('Reward: ', self._total_score)
+        # print('Reward: ', self._total_score)
 
 
 

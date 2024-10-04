@@ -152,7 +152,7 @@ def calculate_payoff(current_phase, leg_data, delta_t, saturation_flow_rate, yel
 
     return reward_stay, reward_switch
 
-def compute_pareto_solution(leg_data, current_phase, delta_t, saturation_flow_rate, yellow_time, min_green_time, max_green_time, green_durations):
+def compute_pareto_solution(leg_data, current_phase, delta_t, saturation_flow_rate, yellow_time, min_green_time, max_green_time, green_durations, stay_will=0.6):
    
     # Check for minimum and maximum green time constraints
     if green_durations[current_phase] < min_green_time:
@@ -203,7 +203,7 @@ def compute_pareto_solution(leg_data, current_phase, delta_t, saturation_flow_ra
     
     # Combine next, 1 and 2 in a single coorporative player
     R_Pc_next = 0.6*stay_next + 0.3*stay_next_1 + 0.1*stay_next_2
-    R_Pc_switch = 0.6*switch_next + 0.6*switch_next_1 + 0.6*switch_next_2
+    R_Pc_switch = 0.6*switch_next + 0.6*switch_next_1 + 0.6*switch_next_2 #Remember this
     
     stay_stay = 0.8*stay_current + 0.2*R_Pc_next
     switch_switch = 0.8*switch_current + 0.2*R_Pc_switch
@@ -213,7 +213,7 @@ def compute_pareto_solution(leg_data, current_phase, delta_t, saturation_flow_ra
     # print("SWITCH_SWITCH: ", switch_switch)
     
     
-    if 0.6*stay_stay > 0.4*switch_switch:
+    if stay_will*stay_stay > (1-stay_will)*switch_switch:
         return current_phase, False
     else:
         return next_phase, True
@@ -246,14 +246,12 @@ def run_game():
     
     num_phases = 4  # Number of phases in the signal cycle
     current_phase = 0  # Start with phase P1
-    
-    
-    delta_t = 6
-    saturation_flow_rate = 1.1#1.6   # Vehicles per second per leg
-    yellow_time = 3
-    min_green_time = 6
-    max_green_time = 30
-
+    delta_t = 6                 #BO 5-24 (2 intervals)
+    saturation_flow_rate = 1.1  #BO 0.6-2 (0.2 intervals)
+    yellow_time = 3             #BO 2,3,4 (1 interval)
+    min_green_time = 6          #BO 6-15 (3 intervals)
+    max_green_time = 30         #BO 30-50 (5 intervals)
+    stay_will = 0.6             #BO 0.5-0.9 (0.1 intervals)
 
     # Define the signal groups for each phase
     phase_signals = {
@@ -282,7 +280,8 @@ def run_game():
                                                             yellow_time, 
                                                             min_green_time, 
                                                             max_green_time, 
-                                                            green_durations)
+                                                            green_durations,
+                                                            stay_will)
 
         if should_switch:
             current_phase = next_phase
@@ -310,10 +309,8 @@ def run_game():
    
     # print("WE GOT HERE")
     print(state.total_score)
+    return
     
-    
-    
-
 
 if __name__ == '__main__':
     run_game()
