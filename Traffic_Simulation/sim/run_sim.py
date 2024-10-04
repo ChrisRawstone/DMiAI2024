@@ -6,7 +6,6 @@ from typing import List, Dict
 
 # Define the overlap duration in ticks (assuming 1 tick corresponds to 1 second)
 OVERLAP_DURATION_TICKS = 1
-
 ##########################################
 # Helper functions for traffic signal optimization
 ##########################################
@@ -160,6 +159,7 @@ def calculate_payoff(current_phase, leg_data, delta_t, saturation_flow_rate, yel
     
     return reward_stay, reward_switch
 
+
 def compute_pareto_solution(leg_data, current_phase, delta_t, saturation_flow_rate, yellow_time, min_green_time, max_green_time, green_durations, stay_will=0.6):
     """
     Compute the Pareto-optimal solution for whether to stay in the current phase or switch to the next.
@@ -262,6 +262,7 @@ def run_game():
         state = output_queue.get()
 
         if state.is_terminated:
+
             break  # Exit the loop if the simulation is finished
 
         # Extract vehicle data from the simulation state
@@ -296,6 +297,8 @@ def run_game():
                 # Continue with the current phase
                 green_durations[current_phase] += 1
                 green_signal_group = phase_signals[current_phase]
+
+
 
         # Update signal states for the simulation
         all_signals = state.signal_groups
