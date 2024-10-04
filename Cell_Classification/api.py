@@ -1,20 +1,11 @@
 import datetime
 import time
-
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from loguru import logger
 from pydantic import BaseModel
-
-import cv2
 import torch
-import albumentations as A
-from albumentations.pytorch import ToTensorV2
-
-# from src.utils import load_model
-from src.predict_api import ensemble_predict, transform_image
-# from src.data.make_dataset import convert_16bit_to_8bit, get_image
-
+from src.predict_api import ensemble_predict
 
 HOST = "0.0.0.0"
 PORT = 9090
@@ -49,11 +40,8 @@ def index():
 def predict_endpoint(request: CellClassificationPredictRequestDto):
     global counter
     try:
-        
-        print("Request received")
         image = request.cell
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        print(f"Using device: {device}\n")
 
         model_info_dict = {
         'MODELS_FINAL_DEPLOY/best_trained_model_2.pth': {'architecture': 'EfficientNetB0', 'img_size': 1400, 'batch_size': 4},
@@ -63,7 +51,7 @@ def predict_endpoint(request: CellClassificationPredictRequestDto):
         'MODELS_FINAL_DEPLOY/best_trained_model_5.pth': {'architecture': 'EfficientNetB0', 'img_size': 1400, 'batch_size': 8}
         }
 
-        preds_binary = ensemble_predict(model_info_dict, image, device='cuda')
+        preds_binary = ensemble_predict(model_info_dict, image, device=device)
 
         # Return the prediction
         response = CellClassificationPredictResponseDto(
