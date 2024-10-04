@@ -45,7 +45,6 @@ def ensemble_predict(models_dict, image, device):
     for idx, (model_path, config) in enumerate(models_dict.items(), 1):
         model_name = config['architecture']
         img_size = config['img_size']
-        print(img_size)
         
         image_tensor = transform_image(image, img_size)
                 
@@ -55,18 +54,22 @@ def ensemble_predict(models_dict, image, device):
         model.eval()  
                 
         with torch.no_grad():
-            # Add a batch dimension by unsqueezing at dim=0
-            inputs = image_tensor.to(device, non_blocking=True)
+            with torch.amp.autocast('cuda'):
+                # # Add a batch dimension by unsqueezing at dim=0
+                # inputs = image_tensor.to(device, non_blocking=True)
 
-            # Enable mixed precision inference if desired
+                # # Enable mixed precision inference if desired
+                # outputs = model(inputs.unsqueeze(0)) 
 
-            outputs = model(inputs.unsqueeze(0)) 
+                # # Apply sigmoid to get the probability for class 1
+                # probs = torch.sigmoid(outputs).detach().cpu().numpy()
 
-            # Apply sigmoid to get the probability for class 1
-            probs = torch.sigmoid(outputs).detach().cpu().numpy()
-
-            # Move the probability to CPU and convert to a Python scalar
-            pred_prob = probs# .cpu().item()
+                # # Move the probability to CPU and convert to a Python scalar
+                # pred_prob = probs# .cpu().item()
+                inputs = image_tensor.to(device, non_blocking=True).unsqueeze(0)
+                outputs = model(inputs)
+                probs = torch.sigmoid(outputs).squeeze(1).cpu().numpy()
+                pred_prob = probs.item()  # If you expect a scalar prediction
         
         # Convert probabilities to predictions
         HIGH_CONFIDENCE_THRESHOLD = 0.70  

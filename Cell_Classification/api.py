@@ -49,33 +49,15 @@ def index():
 def predict_endpoint(request: CellClassificationPredictRequestDto):
     global counter
     try:
+        
         print("Request received")
-        # image = get_image(request.cell)
-        # image = convert_16bit_to_8bit(image)
-
-        # if len(image.shape) == 2:
-        #     image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
-        # else:
-        #     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        
-        # img_size = 350 # remeber to take this from the json congfig
-        
-        # val_transform = A.Compose([
-        #     A.Resize(img_size, img_size),
-        #     A.Normalize(mean=(0.485, 0.485, 0.485),  # Using ImageNet means
-        #                 std=(0.229, 0.229, 0.229)),   # Using ImageNet stds
-        #     ToTensorV2()])
-
-        # transformed = val_transform(image=image)
-        # image = transformed['image']
-
         image = request.cell
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         print(f"Using device: {device}\n")
 
         model_info_dict = {
         'MODELS_FINAL_DEPLOY/best_trained_model_2.pth': {'architecture': 'EfficientNetB0', 'img_size': 1400, 'batch_size': 4},
-        'MODELS_FINAL_DEPLOY/best_trained_model_2.pth': {'architecture': 'EfficientNetB0', 'img_size': 1400, 'batch_size': 4},
+        'MODELS_FINAL_DEPLOY/best_trained_model_1.pth': {'architecture': 'EfficientNetB0', 'img_size': 1400, 'batch_size': 4},
         'MODELS_FINAL_DEPLOY/best_trained_model_3.pth': {'architecture': 'EfficientNetB0', 'img_size': 1400, 'batch_size': 4},
         'MODELS_FINAL_DEPLOY/best_trained_model_4.pth': {'architecture': 'EfficientNetB0', 'img_size': 1000, 'batch_size': 4},
         'MODELS_FINAL_DEPLOY/best_trained_model_5.pth': {'architecture': 'EfficientNetB0', 'img_size': 1400, 'batch_size': 8}

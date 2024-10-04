@@ -54,7 +54,7 @@ def ensemble_predict(models_dict, device):
     for idx, (model_path, config) in enumerate(models_dict.items(), 1):
         model_name = config['architecture']
         img_size = config['img_size']
-        # batch_size = config['batch_size']
+        batch_size = config['batch_size']
         batch_size = 1
         
         _, test_loader, _ = get_dataloaders_final_train(batch_size, img_size)
@@ -66,18 +66,18 @@ def ensemble_predict(models_dict, device):
         
         preds = []
         with torch.no_grad():
-            #progress_bar = tqdm(test_loader, desc=f'Predicting with {model}', leave=False)
-            #for inputs, _ in progress_bar:
-            inputs = test_loader.dataset[0].to(device, non_blocking=True)
+            progress_bar = tqdm(test_loader, desc=f'Predicting with {model}', leave=False)
+            for inputs, _ in progress_bar:
+                inputs = test_loader.dataset[0].to(device, non_blocking=True)
 
-            # Mixed precision inference
-            with torch.amp.autocast('cuda', enabled=True):
-                outputs = model(inputs)  # Shape: (batch_size, 1)
+                # Mixed precision inference
+                with torch.amp.autocast('cuda', enabled=True):
+                    outputs = model(inputs)  # Shape: (batch_size, 1)
 
-            # Apply sigmoid to get probabilities for class 1
-            probs = torch.sigmoid(outputs).squeeze(1)  # Shape: (batch_size,)
+                # Apply sigmoid to get probabilities for class 1
+                probs = torch.sigmoid(outputs).squeeze(1)  # Shape: (batch_size,)
 
-            preds.append(probs.cpu())
+                preds.append(probs.cpu())
 
         # Concatenate all batch predictions for the current model
         preds = torch.cat(preds, dim=0)  

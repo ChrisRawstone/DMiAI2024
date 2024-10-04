@@ -53,29 +53,6 @@ def calculate_custom_score(y_true, y_pred):
     score = (a0 * a1) / (n0 * n1)
     return score
 
-def get_transforms(img_size=224):
-    """
-    Returns the transform pipeline used during training.
-
-    Args:
-        img_size (int): Image size for resizing.
-
-    Returns:
-        albumentations.Compose: Composed transformations.
-    """
-    transform = A.Compose([
-        A.Resize(img_size, img_size),
-        A.Normalize(mean=(0.485, 0.456, 0.406),  # Using ImageNet means
-                    std=(0.229, 0.224, 0.225)),   # Using ImageNet stds
-        ToTensorV2(),
-    ])
-    return transform
-
-# utils.py or wherever your get_model function resides
-import torch.nn as nn
-from torchvision import models
-from timm import create_model  # Ensure you have `timm` installed for Swin Transformer models
-
 def get_model(model_name, num_classes=1, pretrained=True, freeze=True):
     """
     Constructs the model based on the architecture name, modifies the final layer,
@@ -189,70 +166,6 @@ def get_model(model_name, num_classes=1, pretrained=True, freeze=True):
 
     return model
 
-
-# def get_model(model_name, num_classes=1):
-#     """
-#     Constructs the model based on the architecture name.
-
-#     Args:
-#         model_name (str): Name of the model architecture.
-#         num_classes (int): Number of output classes.
-
-#     Returns:
-#         nn.Module: The constructed model.
-#     """
-#     if model_name == 'ViT':
-#         from torchvision.models import vit_b_16, ViT_B_16_Weights
-#         vit_weights = ViT_B_16_Weights.DEFAULT
-#         model = vit_b_16(weights=vit_weights)
-#         in_features = model.heads.head.in_features
-#         model.heads.head = nn.Linear(in_features, num_classes)
-#     elif model_name == 'ViT32':
-#         from torchvision.models import vit_b_32, ViT_B_32_Weights
-#         vit_weights = ViT_B_32_Weights.DEFAULT
-#         model = vit_b_32(weights=vit_weights)
-#         in_features = model.heads.head.in_features
-#         model.heads.head = nn.Linear(in_features, num_classes)
-#     elif model_name == 'ResNet101':
-#         from torchvision.models import resnet101, ResNet101_Weights
-#         resnet_weights = ResNet101_Weights.DEFAULT
-#         model = resnet101(weights=resnet_weights)
-#         in_features = model.fc.in_features
-#         model.fc = nn.Linear(in_features, num_classes)
-#     elif model_name == 'ResNet50':
-#         from torchvision.models import resnet50, ResNet50_Weights
-#         resnet_weights = ResNet50_Weights.DEFAULT
-#         model = resnet50(weights=resnet_weights)
-#         in_features = model.fc.in_features
-#         model.fc = nn.Linear(in_features, num_classes)
-#     elif model_name == 'EfficientNetB0':
-#         from torchvision.models import efficientnet_b0, EfficientNet_B0_Weights
-#         effnet_weights = EfficientNet_B0_Weights.DEFAULT
-#         model = efficientnet_b0(weights=effnet_weights)
-#         in_features = model.classifier[1].in_features
-#         model.classifier[1] = nn.Linear(in_features, num_classes)
-#     elif model_name == 'EfficientNetB4':
-#         from torchvision.models import efficientnet_b4, EfficientNet_B4_Weights
-#         effnet_weights = EfficientNet_B4_Weights.DEFAULT
-#         model = efficientnet_b4(weights=effnet_weights)
-#         in_features = model.classifier[1].in_features
-#         model.classifier[1] = nn.Linear(in_features, num_classes)
-#     elif model_name == 'MobileNetV3':
-#         from torchvision.models import mobilenet_v3_large, MobileNet_V3_Large_Weights
-#         mobilenet_weights = MobileNet_V3_Large_Weights.DEFAULT
-#         model = mobilenet_v3_large(weights=mobilenet_weights)
-#         in_features = model.classifier[3].in_features
-#         model.classifier[3] = nn.Linear(in_features, num_classes)
-#     elif model_name == 'DenseNet121':
-#         from torchvision.models import densenet121, DenseNet121_Weights
-#         densenet_weights = DenseNet121_Weights.DEFAULT
-#         model = densenet121(weights=densenet_weights)
-#         in_features = model.classifier.in_features
-#         model.classifier = nn.Linear(in_features, num_classes)
-#     else:
-#         raise ValueError(f"Unsupported model architecture: {model_name}")
-#     return model
-
 def load_model(checkpoint_path, model_info_path, device):
     """
     Loads the model architecture and weights.
@@ -277,6 +190,24 @@ def load_model(checkpoint_path, model_info_path, device):
     model.to(device)
     model.eval()
     return model, img_size, model_info
+
+def get_transforms(img_size=224):
+    """
+    Returns the transform pipeline used during training.
+
+    Args:
+        img_size (int): Image size for resizing.
+
+    Returns:
+        albumentations.Compose: Composed transformations.
+    """
+    transform = A.Compose([
+        A.Resize(img_size, img_size),
+        A.Normalize(mean=(0.485, 0.456, 0.406),  # Using ImageNet means
+                    std=(0.229, 0.224, 0.225)),   # Using ImageNet stds
+        ToTensorV2(),
+    ])
+    return transform
 
 
 
