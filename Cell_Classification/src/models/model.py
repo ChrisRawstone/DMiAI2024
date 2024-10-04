@@ -3,14 +3,11 @@ import torch.nn as nn
 from torchvision import models
 from torchvision.models import ViT_B_16_Weights, ViT_B_32_Weights
 from torchvision.models import (
-    ResNet18_Weights,
-    ResNet50_Weights,
     ResNet101_Weights,
     EfficientNet_B0_Weights,
     EfficientNet_B4_Weights,
-    MobileNet_V3_Large_Weights, DenseNet121_Weights,
+    DenseNet121_Weights,
 )
-from timm import create_model
 import logging
 
 def get_models(num_classes=1):
@@ -79,35 +76,26 @@ def get_models(num_classes=1):
     densenet_model.classifier = nn.Linear(in_features, num_classes)
     models_dict['DenseNet121'] = densenet_model
 
-    # # Swin Transformer Base Window16 256
-    # swin_model224 = create_model('swinv2_base_window16_256', pretrained=True)
-    # for param in swin_model224.parameters():
-    #     param.requires_grad = False
-    # swin_model224.reset_classifier(num_classes=num_classes)
-    # models_dict['SwinTransformer_B256'] = swin_model224
-
-    # # Swin Transformer Base Patch4 Window7 224
-    # swin_model_S224 = create_model('swin_base_patch4_window7_224', pretrained=True)
-    # for param in swin_model_S224.parameters():
-    #     param.requires_grad = False
-    # swin_model_S224.reset_classifier(num_classes=num_classes)
-    # models_dict['SwinTransformer_B224'] = swin_model_S224
-
-    # # Swin Transformer Large Patch4 Window12 384
-    # swin_model384 = create_model('swin_large_patch4_window12_384', pretrained=True)
-    # for param in swin_model384.parameters():
-    #     param.requires_grad = False
-    # swin_model384.reset_classifier(num_classes=num_classes)
-    # models_dict['SwinTransformer_H384'] = swin_model384
-
-    # # Swin Transformer V2 Large Window12to24 192to384
-    # swin_modelB384 = create_model('swinv2_large_window12to24_192to384', pretrained=True)
-    # for param in swin_modelB384.parameters():
-    #     param.requires_grad = False
-    # swin_modelB384.reset_classifier(num_classes=num_classes)
-    # models_dict['SwinTransformer_L384'] = swin_modelB384
-
     return models_dict
+
+def get_model_parallel(model):
+    """
+    Wraps the model with DataParallel if multiple GPUs are available.
+
+    Args:
+        model (nn.Module): The model to wrap.
+
+    Returns:
+        nn.Module: The potentially parallelized model.
+    """
+    if torch.cuda.device_count() > 1:
+        logging.info(f"Using {torch.cuda.device_count()} GPUs for DataParallel.")
+        model = nn.DataParallel(model, device_ids=list(range(torch.cuda.device_count())))
+    else:
+        logging.info("Using a single GPU.")
+    return model
+
+# Define loss functions
 
 class FocalLoss(nn.Module):
     def __init__(self, alpha=0.25, gamma=2, logits=True, reduce=True):
@@ -155,7 +143,6 @@ class FocalLoss(nn.Module):
         else:
             return F_loss
 
-
 class LabelSmoothingLoss(nn.Module):
     def __init__(self, smoothing=0.25):  
         super(LabelSmoothingLoss, self).__init__()
@@ -166,7 +153,6 @@ class LabelSmoothingLoss(nn.Module):
         targets = targets * (1 - self.smoothing) + 0.5 * self.smoothing
         return nn.functional.binary_cross_entropy_with_logits(inputs, targets)
 
-# Define Balanced Cross-Entropy Loss
 class BalancedBCELoss(nn.Module):
     def __init__(self):
         super(BalancedBCELoss, self).__init__()
@@ -180,20 +166,3 @@ class BalancedBCELoss(nn.Module):
         loss = - (pos_weight * targets * torch.log(inputs + 1e-8) + 
                     neg_weight * (1 - targets) * torch.log(1 - inputs + 1e-8))
         return loss.mean()
-        
-def get_model_parallel(model):
-    """
-    Wraps the model with DataParallel if multiple GPUs are available.
-
-    Args:
-        model (nn.Module): The model to wrap.
-
-    Returns:
-        nn.Module: The potentially parallelized model.
-    """
-    if torch.cuda.device_count() > 1:
-        logging.info(f"Using {torch.cuda.device_count()} GPUs for DataParallel.")
-        model = nn.DataParallel(model, device_ids=list(range(torch.cuda.device_count())))
-    else:
-        logging.info("Using a single GPU.")
-    return model

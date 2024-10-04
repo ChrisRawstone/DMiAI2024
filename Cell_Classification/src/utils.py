@@ -1,5 +1,3 @@
-# utils.py
-import os
 import json
 import torch
 import torch.nn as nn
@@ -7,20 +5,7 @@ import numpy as np
 import cv2
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
-from torchvision import models
 from PIL import Image
-from skimage.feature import hog
-import random
-
-# Set the desired image size (e.g., 128x128) for resizing
-IMAGE_SIZE = (224, 224)
-
-def set_seed(seed=42):
-    """Set random seeds for reproducibility."""
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
 
 def calculate_custom_score(y_true, y_pred):
     """
@@ -123,18 +108,6 @@ def get_model(model_name, num_classes=1, pretrained=True, freeze=True):
         in_features = model.classifier.in_features
         model.classifier = nn.Linear(in_features, num_classes)
 
-    elif model_name == 'SwinTransformer_B256':
-        model = create_model('swinv2_base_window16_256', pretrained=pretrained, num_classes=num_classes)
-
-    elif model_name == 'SwinTransformer_B224':
-        model = create_model('swin_base_patch4_window7_224', pretrained=pretrained, num_classes=num_classes)
-
-    elif model_name == 'SwinTransformer_H384':
-        model = create_model('swin_large_patch4_window12_384', pretrained=pretrained, num_classes=num_classes)
-
-    elif model_name == 'SwinTransformer_L384':
-        model = create_model('swinv2_large_window12to24_192to384', pretrained=pretrained, num_classes=num_classes)
-
     else:
         raise ValueError(f"Unsupported model architecture: {model_name}")
 
@@ -143,7 +116,7 @@ def get_model(model_name, num_classes=1, pretrained=True, freeze=True):
             param.requires_grad = False
 
         # Unfreeze the final layer(s)
-        if model_name.startswith('ViT') or 'SwinTransformer' in model_name:
+        if model_name.startswith('ViT'):
             # Assuming the last layer is named 'heads.head' or similar
             if hasattr(model, 'heads') and hasattr(model.heads, 'head'):
                 for param in model.heads.head.parameters():
@@ -154,7 +127,6 @@ def get_model(model_name, num_classes=1, pretrained=True, freeze=True):
             else:
                 raise AttributeError("Cannot find the classifier head to unfreeze.")
         else:
-            # For models like ResNet, DenseNet, EfficientNet, MobileNet
             if hasattr(model, 'fc'):
                 for param in model.fc.parameters():
                     param.requires_grad = True
@@ -203,122 +175,11 @@ def get_transforms(img_size=224):
     """
     transform = A.Compose([
         A.Resize(img_size, img_size),
-        A.Normalize(mean=(0.485, 0.456, 0.406),  # Using ImageNet means
-                    std=(0.229, 0.224, 0.225)),   # Using ImageNet stds
+        A.Normalize(mean=(0.485, 0.456, 0.406),  
+                    std=(0.229, 0.224, 0.225)), 
         ToTensorV2(),
     ])
     return transform
-
-
-
-def preprocess_image(image_path, transform, device):
-    """
-    Preprocesses the input image.
-
-    Args:
-        image_path (str): Path to the input image.
-        transform (albumentations.Compose): Transform pipeline.
-        device (torch.device): Device to load the image on.
-
-    Returns:
-        torch.Tensor: Preprocessed image tensor.
-    """
-    if not os.path.exists(image_path):
-        raise FileNotFoundError(f"Image file not found: {image_path}")
-    
-    # Read image using OpenCV
-    image = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
-    if image is None:
-        raise ValueError(f"Failed to read image: {image_path}")
-    
-    # Handle 16-bit images by converting to 8-bit
-    if image.dtype == np.uint16:
-        image = (image / 256).astype(np.uint8)
-
-    # Convert grayscale to RGB if needed
-    if len(image.shape) == 2:
-        image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
-    elif image.shape[2] == 1:
-        image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
-    elif image.shape[2] == 4:
-        # Handle images with alpha channel
-        image = cv2.cvtColor(image, cv2.COLOR_BGRA2RGB)
-    else:
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-
-    # Apply transformations
-    augmented = transform(image=image)
-    image = augmented['image'].unsqueeze(0)  # Add batch dimension
-    return image.to(device)
-
-def predict(image_tensor, model, device, threshold=0.5):
-    """
-    Predicts the class of the input image.
-
-    Args:
-        image_tensor (torch.Tensor): Preprocessed image tensor.
-        model (nn.Module): Loaded model.
-        device (torch.device): Device to perform computation on.
-        threshold (float): Threshold for binary classification.
-
-    Returns:
-        int: 1 if homogeneous, 0 otherwise.
-    """
-    with torch.no_grad():
-        outputs = model(image_tensor)
-        probs = torch.sigmoid(outputs)
-        prediction = (probs > threshold).int().item()
-    return prediction
-
-def predict_batch(image_tensors, model, device, threshold=0.5):
-    """
-    Predicts classes for a batch of images.
-
-    Args:
-        image_tensors (torch.Tensor): Batch of preprocessed image tensors.
-        model (nn.Module): Loaded model.
-        device (torch.device): Device to perform computation on.
-        threshold (float): Threshold for binary classification.
-
-    Returns:
-        List[int]: Predictions for each image in the batch.
-    """
-    with torch.no_grad():
-        outputs = model(image_tensors)
-        probs = torch.sigmoid(outputs)
-        predictions = (probs > threshold).int().squeeze().tolist()
-        if isinstance(predictions, int):
-            predictions = [predictions]
-    return predictions
-
-def preprocess_image_hog(image: np.ndarray) -> np.ndarray:
-    """
-    Preprocess the input image for prediction.
-    This includes converting to grayscale, resizing, and extracting HOG features.
-
-    Args:
-        image (np.ndarray): The input image as a NumPy array.
-
-    Returns:
-        np.ndarray: Extracted HOG features from the image.
-    """
-    # Convert to grayscale if image has multiple channels
-    if len(image.shape) == 3:
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-
-    # Resize the image
-    image_resized = cv2.resize(image, IMAGE_SIZE)
-
-    # Compute HOG features
-    hog_features = hog(
-        image_resized, 
-        pixels_per_cell=(8, 8), 
-        cells_per_block=(2, 2), 
-        visualize=False,
-        feature_vector=True
-    )
-
-    return hog_features.reshape(1, -1)  # Reshape to match the input format expected by the model
 
 def save_image_as_tif(image: np.ndarray, output_path: str) -> None:
     """

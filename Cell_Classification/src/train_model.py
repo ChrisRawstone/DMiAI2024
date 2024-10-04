@@ -1,284 +1,126 @@
-import json
-import logging
-from pathlib import Path
-import os
+# train_model.py
+import copy
 import numpy as np
-import optuna
+import json
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from sklearn.metrics import accuracy_score
+import logging
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from tqdm import tqdm
-
-
-from data.make_dataset import get_dataloaders
+from collections import Counter
+from data.make_dataset import get_dataloaders_final_train, LoadTifDataset, get_dataloaders, get_dataloaders_train, get_combined_dataloader
 from src.utils import calculate_custom_score
-from configurations_training import set_seed, get_device, create_directories
-from models.model import get_models, FocalLoss, get_model_parallel, objective
+from models.model import FocalLoss, BalancedBCELoss, get_model_parallel
+from utils import get_model
 
-# =============================================================================================
-# 1. Setup and Configuration
-# =============================================================================================
-set_seed(42)
-# Determine computation device
-device, num_gpus = get_device()
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+num_gpus = torch.cuda.device_count()
 
-
-# Create necessary directories
-directories_to_create = ["checkpoints", "logs"]
-create_directories(directories_to_create)
-
-# Setup logging
-logging.basicConfig(
-    filename='logs/training.log',
-    level=logging.INFO,
-    format='%(asctime)s %(levelname)s %(message)s',
-)
-console = logging.StreamHandler()
-console.setLevel(logging.INFO)
-formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
-console.setFormatter(formatter)
-logging.getLogger('').addHandler(console)
-
-logging.info(f"Number of GPUs available: {num_gpus}")
-
-# Additional setup or training code can be added here
-logging.info("Setup complete. Ready to proceed with training.")
-
-# =============================================================================================
-# 2. Get DataLoaders
-# =============================================================================================
-batch_size = 16  
-img_size = 224  
-
-# Get DataLoaders
-train_loader, val_loader = get_dataloaders(batch_size, img_size)
-
-# =============================================================================================
-# 3. Get Objective Function
-# =============================================================================================
-
-def objective(trial):
-    """
-    Objective function for Optuna hyperparameter optimization.
-
-    Args:
-        trial (optuna.trial.Trial): Optuna trial object.
-
-    Returns:
-        float: Validation custom score to maximize.
-    """
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    # Hyperparameters to tune
-    model_name = trial.suggest_categorical('model_name', ['ViT', 'ResNet50', 'EfficientNet', 'MobileNetV3'])
-
-    if model_name == 'ViT':
-        img_size = 224  # ViT only supports 224x224 images
-    else:
-        img_size = trial.suggest_categorical('img_size', [224, 256, 299])
-
-    batch_size = trial.suggest_categorical('batch_size', [8, 16, 32, 64, 128])
-    lr = trial.suggest_float('lr', 1e-6, 1e-2, log=True)
-    weight_decay = trial.suggest_float('weight_decay', 1e-6, 1e-2, log=True)
-    gamma = trial.suggest_float('gamma', 1.0, 3.0)
-    alpha = trial.suggest_float('alpha', 0.1, 0.9)
-
-    num_epochs = 10 # Fixed number of epochs
+def load_model_and_info(model_info_path):
+    with open(model_info_path, 'r') as f:
+        model_info = json.load(f)
     
-    train_loader, val_loader = get_dataloaders(batch_size, img_size)
+    model_name = model_info['model_name']
+    img_size = model_info['img_size']
+    batch_size = model_info['batch_size']
+    num_epochs = model_info['num_epochs']
+    lr = model_info['learning_rate']
+    weight_decay = model_info['weight_decay']
+    gamma = model_info['gamma']
+    alpha = model_info['alpha']
+    loss_function = model_info['loss_function']
+    optimizer_name = model_info['Optimizer']
+    beta1 = model_info['beta1']
+    beta2 = model_info['beta2']
+    epsilon = model_info['epsilon']
+    alpha_optim = model_info['alpha_optim']
+        
+    model = get_model(model_name, num_classes=1)    
+    
+    return model, model_name, img_size, batch_size, lr, weight_decay, gamma, alpha, num_epochs, loss_function, optimizer_name, beta1, beta2, epsilon, alpha_optim
 
-    # Get model
-    models_dict = get_models()
-    model = models_dict[model_name]
-    model = get_model_parallel(model)
-    model = model.to(device)
 
-    # Loss function
-    criterion = FocalLoss(alpha=alpha, gamma=gamma, logits=True).to(device)
-
-    # Optimizer and Scheduler
-    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
-
-    # Mixed Precision Scaler
-    scaler = torch.amp.GradScaler("cuda")  # Updated to use torch.cuda.amp
-
-    best_custom_score = 0
-
-    for epoch in range(num_epochs):
-        model.train()
-        train_loss = 0
-        train_preds = []
-        train_targets = []
-
-        progress_bar = tqdm(train_loader, desc=f'Training Epoch {epoch+1}', leave=False)
-        for images, labels in progress_bar:
-            images = images.to(device, non_blocking=True)
-            labels = labels.float().unsqueeze(1).to(device, non_blocking=True)
-
-            optimizer.zero_grad()
-
-            with torch.amp.autocast("cuda"):  # Updated autocast usage
-                outputs = model(images)
-                loss = criterion(outputs, labels)
-
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
-
-            train_loss += loss.item() * images.size(0)
-
-            preds = torch.sigmoid(outputs).detach().cpu().numpy()
-            train_preds.extend(preds)
-            train_targets.extend(labels.detach().cpu().numpy())
-
-            progress_bar.set_postfix({'Loss': loss.item()})
-
-        # Validation
-        model.eval()
-        val_loss = 0
-        val_preds = []
-        val_targets = []
-
-        with torch.no_grad():
-            progress_bar = tqdm(val_loader, desc='Validation', leave=False)
-            for images, labels in progress_bar:
-                images = images.to(device, non_blocking=True)
-                labels = labels.float().unsqueeze(1).to(device, non_blocking=True)
-
-                with torch.amp.autocast("cuda"):  # Updated autocast usage
-                    outputs = model(images)
-                    loss = criterion(outputs, labels)
-
-                val_loss += loss.item() * images.size(0)
-
-                preds = torch.sigmoid(outputs).detach().cpu().numpy()
-                val_preds.extend(preds)
-                val_targets.extend(labels.detach().cpu().numpy())
-
-        # Calculate custom score
-        preds_binary = (np.array(val_preds) > 0.5).astype(int)
-        custom_score = calculate_custom_score(val_targets, preds_binary)
-
-        scheduler.step()
-
-        # Update best score and save model + JSON
-        if custom_score > best_custom_score:
-            best_custom_score = custom_score
-
-            # Save the best model from Optuna hypertuning
-            save_path_optuna = 'checkpoints/best_model_optuna.pth'
-            if isinstance(model, nn.DataParallel):
-                torch.save(model.module.state_dict(), save_path_optuna)
-            else:
-                torch.save(model.state_dict(), save_path_optuna)
-            logging.info(f"New best Optuna model saved with Val Score: {best_custom_score:.4f}")
-
-            # Save model architecture and hyperparameters for Optuna best model
-            model_info_optuna = {
-                'model_name': model_name,
-                'img_size': img_size,
-                'batch_size': batch_size,
-                'learning_rate': lr,
-                'weight_decay': weight_decay,
-                'gamma': gamma,
-                'alpha': alpha
-            }
-            with open('checkpoints/model_info_optuna.json', 'w') as f:
-                json.dump(model_info_optuna, f, indent=4)
-            logging.info("Optuna best model architecture and hyperparameters saved to 'checkpoints/model_info_optuna.json'.")
-
-        # Report intermediate objective value
-        trial.report(custom_score, epoch)
-
-        # Handle pruning based on the intermediate value
-        if trial.should_prune():
-            raise optuna.exceptions.TrialPruned()
-
-    return best_custom_score
-
-# =============================================================================================
-# 4. Run Optuna Study
-# =============================================================================================
-n_trials = 2
-study = optuna.create_study(direction='maximize')
-study.optimize(objective, n_trials=n_trials, timeout=None)  
-
-logging.info("========== Best Trial ==========")
-best_trial = study.best_trial
-
-logging.info(f"Value (Custom Score): {best_trial.value}")
-logging.info(" Params: ")
-for key, value in best_trial.params.items():
-    logging.info(f"    {key}: {value}")
-
-# =============================================================================================
-# 5. Train Best Model with Best Hyperparameters
-# =============================================================================================
-
-def train_best_model(trial):
-    """
-    Trains the best model with the best hyperparameters found by Optuna.
-
-    Args:
-        trial (optuna.trial.FrozenTrial): Best trial object from Optuna study.
-    """
-    model_name = trial.params['model_name']
-
-    if model_name == 'ViT':
-        img_size = 224  # Fixed for ViT
-    else:
-        img_size = trial.params.get('img_size', 224)  # Default to 224 if not present
-
-    batch_size = trial.params['batch_size']
-    lr = trial.params['lr']
-    weight_decay = trial.params['weight_decay']
-    gamma = trial.params['gamma']
-    alpha = trial.params['alpha']
-
-    num_epochs = 10  # Increased epochs for final training
-
-    # Get model
-    models_dict = get_models()
-    model = models_dict[model_name]
-    model = get_model_parallel(model)
-    model = model.to(device)
+def train_model(model, img_size, batch_size, lr, weight_decay, gamma, alpha, num_epochs, loss_function, optimizer_name, 
+               beta1, beta2, epsilon, alpha_optim, device, save_path_final, patience=10, final_train=False): 
 
     # Get dataloaders
-    train_loader, val_loader = get_dataloaders(batch_size, img_size)
+    # train_loader, val_loader = get_dataloaders_train(batch_size, img_size)
+    if final_train:
+        train_loader = get_combined_dataloader(batch_size, img_size)
+    
+    else:
+        train_loader, _, _ = get_dataloaders_final_train(batch_size, img_size)
+        train_dataset = LoadTifDataset(
+        image_dir='data/training',
+        csv_file_path='data/training.csv',
+        transform=None )
 
-    # Loss function
-    criterion = FocalLoss(alpha=alpha, gamma=gamma, logits=True).to(device)
+        # Extract labels from the full dataset
+        labels = train_dataset.labels_df.iloc[:, 1].values.astype(int)  # Assuming labels are in the second column
 
-    # Optimizer and Scheduler
-    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+        # Compute class counts and pos_weight for Weighted BCE Loss
+        class_counts = Counter(labels)
+        num_positive = class_counts[1] if 1 in class_counts else 0
+        num_negative = class_counts[0] if 0 in class_counts else 0
+        if num_positive == 0 or num_negative == 0:
+            pos_weight = 1.0  # Avoid division by zero; adjust as needed
+        else:
+            pos_weight = num_negative / num_positive
+
+    # Loss function    
+    if loss_function == 'BCEWithLogitsLoss':
+        criterion = nn.BCEWithLogitsLoss().to(device)
+    elif loss_function == 'WeightedBCEWithLogitsLoss':
+        pos_weight_tensor = torch.tensor([pos_weight], dtype=torch.float).to(device)
+        criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight_tensor).to(device)
+    elif loss_function == 'FocalLoss':
+        criterion = FocalLoss(alpha=alpha, gamma=gamma, logits=True, reduce=True).to(device)
+    elif loss_function == 'BalancedCrossEntropyLoss':
+        criterion = BalancedBCELoss().to(device)
+    else:
+        raise ValueError(f"Unsupported loss function: {loss_function}")
+
+    # Load model 
+    model = model.to(device)
+    model = get_model_parallel(model)
+    
+    # Create optimizer using the sampled hyperparameters
+    if optimizer_name in ['AdamW', 'Adam']:
+        optimizer_class = optim.AdamW if optimizer_name == 'AdamW' else optim.Adam
+        optimizer = optimizer_class(
+            model.parameters(),
+            lr=lr,
+            betas=(beta1,beta2),
+            eps=epsilon,
+            weight_decay=weight_decay
+        )
+    elif optimizer_name == 'RMSprop':
+        optimizer = optim.RMSprop(
+            model.parameters(),
+            lr=lr,
+            #alpha=alpha_optim,
+            eps=epsilon,
+            weight_decay=weight_decay)
+    else:
+        raise ValueError(f"Unsupported optimizer: {optimizer_name}")
+
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
-
-    # Mixed Precision Scaler
-    scaler = torch.amp.GradScaler("cuda")  # Updated to use torch.cuda.amp
-
-    best_custom_score = 0
-    early_stopping_patience = 10
-    patience_counter = 0
-
-    # Initialize model_info dictionary
-    model_info = {
-        'model_name': model_name,
-        'img_size': img_size,
-        'batch_size': batch_size,
-        'learning_rate': lr,
-        'weight_decay': weight_decay,
-        'gamma': gamma,
-        'alpha': alpha
-    }
+    scaler = torch.amp.GradScaler('cuda')  
+    
+    best_val_loss = float('inf')
+    best_epoch = 0
+    epochs_no_improve = 0
 
     for epoch in range(num_epochs):
         logging.info(f"Epoch {epoch+1}/{num_epochs}")
+        
+        # Training Phase
         model.train()
-        train_loss = 0
+        train_loss = 0.0
         train_preds = []
         train_targets = []
-
+        
         progress_bar = tqdm(train_loader, desc='Training', leave=False)
         for images, labels in progress_bar:
             images = images.to(device, non_blocking=True)
@@ -286,37 +128,41 @@ def train_best_model(trial):
 
             optimizer.zero_grad()
 
-            with torch.amp.autocast("cuda"):  # Updated autocast usage
+            # Use autocast for mixed precision
+            with torch.amp.autocast('cuda'):  
                 outputs = model(images)
                 loss = criterion(outputs, labels)
 
+            # Scale the loss and perform backpropagation
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
 
             train_loss += loss.item() * images.size(0)
 
+            # Collect predictions and targets for metrics
             preds = torch.sigmoid(outputs).detach().cpu().numpy()
             train_preds.extend(preds)
             train_targets.extend(labels.detach().cpu().numpy())
 
             progress_bar.set_postfix({'Loss': loss.item()})
-
+        
+        # Calculate average training loss
         avg_train_loss = train_loss / len(train_loader.dataset)
 
-        # Validation
+        # Validation Phase on Training Data
         model.eval()
-        val_loss = 0
+        val_loss = 0.0
         val_preds = []
         val_targets = []
 
         with torch.no_grad():
-            progress_bar = tqdm(val_loader, desc='Validation', leave=False)
+            progress_bar = tqdm(train_loader, desc='Validation on Training Data', leave=False)
             for images, labels in progress_bar:
                 images = images.to(device, non_blocking=True)
                 labels = labels.float().unsqueeze(1).to(device, non_blocking=True)
 
-                with torch.amp.autocast("cuda"):  # Updated autocast usage
+                with torch.amp.autocast('cuda'):
                     outputs = model(images)
                     loss = criterion(outputs, labels)
 
@@ -326,116 +172,135 @@ def train_best_model(trial):
                 val_preds.extend(preds)
                 val_targets.extend(labels.detach().cpu().numpy())
 
-        avg_val_loss = val_loss / len(val_loader.dataset)
+                progress_bar.set_postfix({'Val Loss': loss.item()})
+        
+        # Calculate average validation loss
+        avg_val_loss = val_loss / len(train_loader.dataset)
 
         # Calculate accuracy
         preds_binary = (np.array(val_preds) > 0.5).astype(int)
-        val_acc = accuracy_score(val_targets, preds_binary) * 100  # Convert to percentage
+        val_acc = accuracy_score(val_targets, preds_binary) * 100 
 
         # Calculate custom score
         custom_score = calculate_custom_score(val_targets, preds_binary)
 
-        logging.info(f"Train Loss: {avg_train_loss:.4f}")
-        logging.info(f"Val Loss: {avg_val_loss:.4f} | Val Acc: {val_acc:.2f}% | Val Score: {custom_score:.4f}")
+        # Log epoch metrics
+        print(
+            f"Epoch {epoch+1}/{num_epochs} | "
+            f"Train Loss: {avg_train_loss:.4f} | "
+            f"Val Loss: {avg_val_loss:.4f} | "
+            f"Val Acc: {val_acc:.2f}% | "
+            f"Custom Score: {custom_score:.4f} | "
+            f"Learning Rate: {scheduler.get_last_lr()[0]:.6f}")
 
-        # Scheduler step
-        scheduler.step()
-
-        # Checkpointing based on custom score
-        if custom_score > best_custom_score:
-            best_custom_score = custom_score
-            # Save the best model from final training with a different name
-            save_path_final = 'checkpoints/best_model_final.pth'  # Changed filename
-            if isinstance(model, nn.DataParallel):
-                torch.save(model.module.state_dict(), save_path_final)
-            else:
-                torch.save(model.state_dict(), save_path_final)
-            logging.info(f"Best final model saved with Val Score: {best_custom_score:.4f}")
-            patience_counter = 0
-
-            # Save model architecture name
-            model_info_current = {
-                'model_name': model_name,
-                'img_size': img_size
-            }
-            with open('checkpoints/model_info_final.json', 'w') as f:
-                json.dump(model_info_current, f)
-            logging.info("Final model architecture information saved to 'checkpoints/model_info_final.json'.")
-
+        # Check for improvement
+        if avg_val_loss < best_val_loss:
+            best_val_loss = avg_val_loss
+            best_epoch = epoch
+            epochs_no_improve = 0
+            
         else:
-            patience_counter += 1
-            logging.info(f"No improvement in Val Score for {patience_counter} epochs.")
+            epochs_no_improve += 1
 
-        # Early Stopping
-        if patience_counter >= early_stopping_patience:
-            logging.info("Early stopping triggered.")
-            break
+        # # Check if early stopping should be triggered
+        # if epochs_no_improve >= patience:
+        #     logging.info(f"Early stopping triggered after {epoch+1} epochs.")
+        #     break
 
-    # Load best model
+        # Update the learning rate scheduler
+        scheduler.step()
+    
+    # Save the final model
     if isinstance(model, nn.DataParallel):
-        model.module.load_state_dict(torch.load('checkpoints/best_model_final.pth'))
+        torch.save(model.module.state_dict(), save_path_final)
     else:
-        model.load_state_dict(torch.load('checkpoints/best_model_final.pth'))
-    model.eval()
+        torch.save(model.state_dict(), save_path_final)
+    
 
-    # Final Evaluation
-    val_loss = 0
+    logging.info(f"Training completed. Best validation loss: {best_val_loss:.4f} at epoch {best_epoch+1}.")
+
+    return model
+
+
+def evaluate_model(model, test_loader, device):
+    
+    model.eval()
     val_preds = []
     val_targets = []
 
     with torch.no_grad():
-        progress_bar = tqdm(val_loader, desc='Final Evaluation', leave=False)
+        progress_bar = tqdm(test_loader, desc='test', leave=False)
         for images, labels in progress_bar:
             images = images.to(device, non_blocking=True)
             labels = labels.float().unsqueeze(1).to(device, non_blocking=True)
 
             with torch.amp.autocast("cuda"):  # Updated autocast usage
                 outputs = model(images)
-                loss = criterion(outputs, labels)
-
-            val_loss += loss.item() * images.size(0)
 
             preds = torch.sigmoid(outputs).detach().cpu().numpy()
             val_preds.extend(preds)
             val_targets.extend(labels.detach().cpu().numpy())
 
-    avg_val_loss = val_loss / len(val_loader.dataset)
+    # Calculate custom score
     preds_binary = (np.array(val_preds) > 0.5).astype(int)
-    val_acc = accuracy_score(val_targets, preds_binary) * 100
     custom_score = calculate_custom_score(val_targets, preds_binary)
 
-    logging.info("===== Final Evaluation =====")
-    logging.info(f"Val Loss: {avg_val_loss:.4f} | Val Acc: {val_acc:.2f}% | Val Score: {custom_score:.4f}")
+    ground_truths = np.array(val_targets)
+    predictions = np.array(preds_binary)
 
-    # Save the final model
-    save_path_final = 'checkpoints/final_model_final.pth'  # Changed filename to differentiate from Optuna best
-    if isinstance(model, nn.DataParallel):
-        torch.save(model.module.state_dict(), save_path_final)
-    else:
-        torch.save(model.state_dict(), save_path_final)
-    logging.info(f"Final model saved as '{save_path_final}'.")
+    accuracy = accuracy_score(ground_truths, predictions)
+    precision = precision_score(ground_truths, predictions, zero_division=0)
+    recall = recall_score(ground_truths, predictions, zero_division=0, average='macro')
+    f1 = f1_score(ground_truths, predictions, zero_division=0)
 
-    # Optionally, save the model architecture info for the final model
-    with open('checkpoints/final_model_info_final.json', 'w') as f:
-        json.dump(model_info, f)
-    logging.info("Final model architecture information saved to 'checkpoints/final_model_info_final.json'.")
+    print("\nEvaluation Metrics:")
+    print(f"Accuracy : {accuracy:.4f}")
+    print(f"Precision: {precision:.4f}")
+    print(f"Recall   : {recall:.4f}")
+    print(f"F1 Score : {f1:.4f}")
+    print(f"Custom Score: {custom_score:.4f}")
 
-    # ===============================
-    # Print Final Summary
-    # ===============================
 
-    logging.info("===== Best Model Configuration =====")
-    for key, value in model_info.items():
-        logging.info(f"{key}: {value}")
+if __name__ == "__main__":
+    model_info = 'MODELS_FINAL_DEPLOY/best_model_5.json'
+    
+    save_path_final = 'MODELS_FINAL_EVAL/best_trained_model_6.pth'
+    save_path_final_all = 'MODELS_FINAL_DEPLOY/best_trained_model_5.pth'
+    
+    model_loaded, model_name, img_size, batch_size, lr, weight_decay, gamma, alpha, num_epochs, loss_function, optimizer_name, beta1, beta2, epsilon, alpha_optim = load_model_and_info(model_info)
+    
+    model_trained = train_model(model_loaded, img_size, batch_size, lr, weight_decay, gamma, alpha, 
+                                num_epochs, loss_function, optimizer_name, beta1, beta2, epsilon, alpha_optim, device, save_path_final)
+    
+    # model = get_model(model_name, num_classes=1)
+    # checkpoint = torch.load('MODELS_FINAL_EVAL/best_trained_model_8.pth', map_location=device, weights_only=True)
+    # model.load_state_dict(checkpoint)
+    # model.to(device)
+    
+    model_loaded_final = get_model(model_name, num_classes=1)
+    model_loaded_final, model_name, img_size, batch_size, lr, weight_decay, gamma, alpha, num_epochs, loss_function, optimizer_name, beta1, beta2, epsilon, alpha_optim = load_model_and_info(model_info)
+    checkpoint = torch.load('MODELS_FINAL_DEPLOY/best_trained_model_8.pth', map_location=device, weights_only=True)
+    model_loaded_final.load_state_dict(checkpoint)
+    # model_loaded_final.to(device)
+    num_epochs += 5
+    model_final = train_model(model_loaded_final, img_size, batch_size, lr, weight_decay, gamma, alpha, num_epochs, loss_function, optimizer_name, beta1, beta2, 
+                                          epsilon, alpha_optim, device, save_path_final_all, final_train=True)
+        
+    train_loader, test_loader, train_loader_eval = get_dataloaders_final_train(batch_size, img_size)
+    train_loader_all = get_combined_dataloader(batch_size, img_size)
+    
+    print('on test')
+    evaluate_model(model_trained, test_loader, device)
+    
+    print('on training')
+    evaluate_model(model_trained, train_loader_eval, device)
+    
+    print('final model on all')
+    evaluate_model(model_final, train_loader_all, device)
+    
 
-    logging.info("===== Final Evaluation Metrics =====")
-    logging.info(f"Validation Loss: {avg_val_loss:.4f}")
-    logging.info(f"Validation Accuracy: {val_acc:.2f}%")
-    logging.info(f"Custom Score: {custom_score:.4f}")
+    # model = get_model(model_name, num_classes=1)
+    # checkpoint = torch.load('checkpoints/best_model_optuna.pth', map_location=device, weights_only=True)
+    # model.load_state_dict(checkpoint)
+    # model.to(device)
 
-# ===============================
-# 6. Execute Training of Best Model
-# ===============================
-
-# Train the best model
-train_best_model(best_trial)
