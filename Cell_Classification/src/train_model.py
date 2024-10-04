@@ -1,74 +1,93 @@
-# train_model.py
-import copy
-import numpy as np
 import json
+import logging
+from collections import Counter
+
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import logging
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from tqdm import tqdm
-from collections import Counter
-from data.make_dataset import get_dataloaders_final_train, LoadTifDataset, get_dataloaders, get_dataloaders_train, get_combined_dataloader
+
+from data.make_dataset import (
+    get_dataloaders_final_train,
+    LoadTifDataset,
+    get_combined_dataloader
+)
 from src.utils import calculate_custom_score
 from models.model import FocalLoss, BalancedBCELoss, get_model_parallel
 from utils import get_model
 
+# Set device
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-num_gpus = torch.cuda.device_count()
 
 def load_model_and_info(model_info_path):
+    """
+    Load model configuration from a JSON file and initialize the model.
+
+    Args:
+        model_info_path (str): Path to the JSON file containing model configuration.
+
+    Returns:
+        model (nn.Module): Initialized model.
+        config (dict): Dictionary containing model configuration.
+    """
     with open(model_info_path, 'r') as f:
         model_info = json.load(f)
     
     model_name = model_info['model_name']
-    img_size = model_info['img_size']
-    batch_size = model_info['batch_size']
-    num_epochs = model_info['num_epochs']
-    lr = model_info['learning_rate']
-    weight_decay = model_info['weight_decay']
-    gamma = model_info['gamma']
-    alpha = model_info['alpha']
-    loss_function = model_info['loss_function']
-    optimizer_name = model_info['Optimizer']
-    beta1 = model_info['beta1']
-    beta2 = model_info['beta2']
-    epsilon = model_info['epsilon']
-    alpha_optim = model_info['alpha_optim']
-        
-    model = get_model(model_name, num_classes=1)    
+    model = get_model(model_name, num_classes=1)
     
-    return model, model_name, img_size, batch_size, lr, weight_decay, gamma, alpha, num_epochs, loss_function, optimizer_name, beta1, beta2, epsilon, alpha_optim
+    return model, model_info
 
+def train_model(model, config, device, save_path_final, patience=10, final_train=False): 
+    """
+    Train the model with the provided configuration.
 
-def train_model(model, img_size, batch_size, lr, weight_decay, gamma, alpha, num_epochs, loss_function, optimizer_name, 
-               beta1, beta2, epsilon, alpha_optim, device, save_path_final, patience=10, final_train=False): 
+    Args:
+        model (nn.Module): The model to train.
+        config (dict): Dictionary containing training configuration.
+        device (torch.device): The device to use for training.
+        save_path_final (str): Path to save the final model.
+        patience (int, optional): Early stopping patience. Defaults to 10.
+        final_train (bool, optional): Whether to use combined dataset. Defaults to False.
+
+    Returns:
+        nn.Module: Trained model.
+    """
+    img_size = config['img_size']
+    batch_size = config['batch_size']
+    num_epochs = config['num_epochs']
+    lr = config['learning_rate']
+    weight_decay = config['weight_decay']
+    gamma = config['gamma']
+    alpha = config['alpha']
+    loss_function = config['loss_function']
+    optimizer_name = config['Optimizer']
+    beta1 = config['beta1']
+    beta2 = config['beta2']
+    epsilon = config['epsilon']
+    alpha_optim = config.get('alpha_optim', 0.99)  # Default value if not provided
 
     # Get dataloaders
-    # train_loader, val_loader = get_dataloaders_train(batch_size, img_size)
     if final_train:
         train_loader = get_combined_dataloader(batch_size, img_size)
-    
     else:
         train_loader, _, _ = get_dataloaders_final_train(batch_size, img_size)
         train_dataset = LoadTifDataset(
-        image_dir='data/training',
-        csv_file_path='data/training.csv',
-        transform=None )
-
+            image_dir='data/training',
+            csv_file_path='data/training.csv',
+            transform=None
+        )
         # Extract labels from the full dataset
         labels = train_dataset.labels_df.iloc[:, 1].values.astype(int)  # Assuming labels are in the second column
-
         # Compute class counts and pos_weight for Weighted BCE Loss
         class_counts = Counter(labels)
-        num_positive = class_counts[1] if 1 in class_counts else 0
-        num_negative = class_counts[0] if 0 in class_counts else 0
-        if num_positive == 0 or num_negative == 0:
-            pos_weight = 1.0  # Avoid division by zero; adjust as needed
-        else:
-            pos_weight = num_negative / num_positive
+        num_positive = class_counts.get(1, 0)
+        num_negative = class_counts.get(0, 0)
+        pos_weight = num_negative / num_positive if num_positive > 0 else 1.0
 
-    # Loss function    
+    # Define loss function
     if loss_function == 'BCEWithLogitsLoss':
         criterion = nn.BCEWithLogitsLoss().to(device)
     elif loss_function == 'WeightedBCEWithLogitsLoss':
@@ -81,17 +100,24 @@ def train_model(model, img_size, batch_size, lr, weight_decay, gamma, alpha, num
     else:
         raise ValueError(f"Unsupported loss function: {loss_function}")
 
-    # Load model 
+    # Load model to device and set up for parallel training if multiple GPUs are available
     model = model.to(device)
     model = get_model_parallel(model)
     
-    # Create optimizer using the sampled hyperparameters
-    if optimizer_name in ['AdamW', 'Adam']:
-        optimizer_class = optim.AdamW if optimizer_name == 'AdamW' else optim.Adam
-        optimizer = optimizer_class(
+    # Create optimizer
+    if optimizer_name == 'AdamW':
+        optimizer = optim.AdamW(
             model.parameters(),
             lr=lr,
-            betas=(beta1,beta2),
+            betas=(beta1, beta2),
+            eps=epsilon,
+            weight_decay=weight_decay
+        )
+    elif optimizer_name == 'Adam':
+        optimizer = optim.Adam(
+            model.parameters(),
+            lr=lr,
+            betas=(beta1, beta2),
             eps=epsilon,
             weight_decay=weight_decay
         )
@@ -99,14 +125,16 @@ def train_model(model, img_size, batch_size, lr, weight_decay, gamma, alpha, num
         optimizer = optim.RMSprop(
             model.parameters(),
             lr=lr,
-            #alpha=alpha_optim,
+            alpha=alpha_optim,
             eps=epsilon,
-            weight_decay=weight_decay)
+            weight_decay=weight_decay
+        )
     else:
         raise ValueError(f"Unsupported optimizer: {optimizer_name}")
 
+    # Learning rate scheduler and gradient scaler for mixed precision
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
-    scaler = torch.amp.GradScaler('cuda')  
+    scaler = torch.amp.GradScaler('cuda')
     
     best_val_loss = float('inf')
     best_epoch = 0
@@ -177,35 +205,31 @@ def train_model(model, img_size, batch_size, lr, weight_decay, gamma, alpha, num
         # Calculate average validation loss
         avg_val_loss = val_loss / len(train_loader.dataset)
 
-        # Calculate accuracy
+        # Calculate metrics
         preds_binary = (np.array(val_preds) > 0.5).astype(int)
         val_acc = accuracy_score(val_targets, preds_binary) * 100 
-
-        # Calculate custom score
         custom_score = calculate_custom_score(val_targets, preds_binary)
 
         # Log epoch metrics
-        print(
+        logging.info(
             f"Epoch {epoch+1}/{num_epochs} | "
             f"Train Loss: {avg_train_loss:.4f} | "
             f"Val Loss: {avg_val_loss:.4f} | "
             f"Val Acc: {val_acc:.2f}% | "
             f"Custom Score: {custom_score:.4f} | "
-            f"Learning Rate: {scheduler.get_last_lr()[0]:.6f}")
+            f"Learning Rate: {scheduler.get_last_lr()[0]:.6f}"
+        )
 
         # Check for improvement
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
             best_epoch = epoch
             epochs_no_improve = 0
-            
         else:
             epochs_no_improve += 1
-
-        # # Check if early stopping should be triggered
-        # if epochs_no_improve >= patience:
-        #     logging.info(f"Early stopping triggered after {epoch+1} epochs.")
-        #     break
+            if epochs_no_improve >= patience:
+                logging.info("Early stopping triggered.")
+                break
 
         # Update the learning rate scheduler
         scheduler.step()
@@ -216,32 +240,37 @@ def train_model(model, img_size, batch_size, lr, weight_decay, gamma, alpha, num
     else:
         torch.save(model.state_dict(), save_path_final)
     
-
     logging.info(f"Training completed. Best validation loss: {best_val_loss:.4f} at epoch {best_epoch+1}.")
 
     return model
 
+def evaluate_model(model, data_loader, device):
+    """
+    Evaluate the model on the provided data loader.
 
-def evaluate_model(model, test_loader, device):
-    
+    Args:
+        model (nn.Module): The model to evaluate.
+        data_loader (DataLoader): DataLoader for evaluation data.
+        device (torch.device): The device to use for evaluation.
+    """
     model.eval()
     val_preds = []
     val_targets = []
 
     with torch.no_grad():
-        progress_bar = tqdm(test_loader, desc='test', leave=False)
+        progress_bar = tqdm(data_loader, desc='Evaluation', leave=False)
         for images, labels in progress_bar:
             images = images.to(device, non_blocking=True)
             labels = labels.float().unsqueeze(1).to(device, non_blocking=True)
 
-            with torch.amp.autocast("cuda"):  # Updated autocast usage
+            with torch.cuda.amp.autocast():
                 outputs = model(images)
 
             preds = torch.sigmoid(outputs).detach().cpu().numpy()
             val_preds.extend(preds)
             val_targets.extend(labels.detach().cpu().numpy())
 
-    # Calculate custom score
+    # Calculate metrics
     preds_binary = (np.array(val_preds) > 0.5).astype(int)
     custom_score = calculate_custom_score(val_targets, preds_binary)
 
@@ -254,53 +283,53 @@ def evaluate_model(model, test_loader, device):
     f1 = f1_score(ground_truths, predictions, zero_division=0)
 
     print("\nEvaluation Metrics:")
-    print(f"Accuracy : {accuracy:.4f}")
-    print(f"Precision: {precision:.4f}")
-    print(f"Recall   : {recall:.4f}")
-    print(f"F1 Score : {f1:.4f}")
-    print(f"Custom Score: {custom_score:.4f}")
-
+    print(f"Accuracy     : {accuracy:.4f}")
+    print(f"Precision    : {precision:.4f}")
+    print(f"Recall       : {recall:.4f}")
+    print(f"F1 Score     : {f1:.4f}")
+    print(f"Custom Score : {custom_score:.4f}")
 
 if __name__ == "__main__":
-    model_info = 'MODELS_FINAL_DEPLOY/best_model_5.json'
-    
+    model_info_path = 'MODELS_FINAL_DEPLOY/best_model_5.json'
     save_path_final = 'MODELS_FINAL_EVAL/best_trained_model_6.pth'
     save_path_final_all = 'MODELS_FINAL_DEPLOY/best_trained_model_5.pth'
-    
-    model_loaded, model_name, img_size, batch_size, lr, weight_decay, gamma, alpha, num_epochs, loss_function, optimizer_name, beta1, beta2, epsilon, alpha_optim = load_model_and_info(model_info)
-    
-    model_trained = train_model(model_loaded, img_size, batch_size, lr, weight_decay, gamma, alpha, 
-                                num_epochs, loss_function, optimizer_name, beta1, beta2, epsilon, alpha_optim, device, save_path_final)
-    
-    # model = get_model(model_name, num_classes=1)
-    # checkpoint = torch.load('MODELS_FINAL_EVAL/best_trained_model_8.pth', map_location=device, weights_only=True)
-    # model.load_state_dict(checkpoint)
-    # model.to(device)
-    
-    model_loaded_final = get_model(model_name, num_classes=1)
-    model_loaded_final, model_name, img_size, batch_size, lr, weight_decay, gamma, alpha, num_epochs, loss_function, optimizer_name, beta1, beta2, epsilon, alpha_optim = load_model_and_info(model_info)
-    checkpoint = torch.load('MODELS_FINAL_DEPLOY/best_trained_model_8.pth', map_location=device, weights_only=True)
-    model_loaded_final.load_state_dict(checkpoint)
-    # model_loaded_final.to(device)
-    num_epochs += 5
-    model_final = train_model(model_loaded_final, img_size, batch_size, lr, weight_decay, gamma, alpha, num_epochs, loss_function, optimizer_name, beta1, beta2, 
-                                          epsilon, alpha_optim, device, save_path_final_all, final_train=True)
-        
+
+    # Load model and configuration
+    model_loaded, config = load_model_and_info(model_info_path)
+
+    # Train the model
+    model_trained = train_model(
+        model_loaded,
+        config,
+        device,
+        save_path_final
+    )
+
+    # Load the model again for final training
+    model_loaded_final, config = load_model_and_info(model_info_path)
+    config['num_epochs'] += 5  # Increase the number of epochs for final training
+
+    # Final training on combined dataset
+    model_final = train_model(
+        model_loaded_final,
+        config,
+        device,
+        save_path_final_all,
+        final_train=True
+    )
+
+    # Get data loaders for evaluation
+    batch_size = config['batch_size']
+    img_size = config['img_size']
     train_loader, test_loader, train_loader_eval = get_dataloaders_final_train(batch_size, img_size)
     train_loader_all = get_combined_dataloader(batch_size, img_size)
-    
-    print('on test')
+
+    # Evaluate the model
+    print('Evaluation on test data:')
     evaluate_model(model_trained, test_loader, device)
-    
-    print('on training')
+
+    print('Evaluation on training data:')
     evaluate_model(model_trained, train_loader_eval, device)
-    
-    print('final model on all')
+
+    print('Final model evaluation on combined data:')
     evaluate_model(model_final, train_loader_all, device)
-    
-
-    # model = get_model(model_name, num_classes=1)
-    # checkpoint = torch.load('checkpoints/best_model_optuna.pth', map_location=device, weights_only=True)
-    # model.load_state_dict(checkpoint)
-    # model.to(device)
-

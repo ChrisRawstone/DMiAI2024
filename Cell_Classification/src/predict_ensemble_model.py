@@ -5,19 +5,10 @@ from data.make_dataset import get_dataloaders_final_train
 from src.utils import calculate_custom_score
 from utils import get_model
 import numpy as np
-from sklearn.metrics import roc_curve
-import matplotlib.pyplot as pyplot
+
 
 # Device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-# model_info_dict = {
-#     'MODELS_FINAL_EVAL/best_trained_model_1.pth': {'architecture': 'EfficientNetB0', 'img_size': 1400, 'batch_size': 4},
-#     'MODELS_FINAL_EVAL/best_trained_model_2.pth': {'architecture': 'EfficientNetB0', 'img_size': 1400, 'batch_size': 4},
-#     'MODELS_FINAL_EVAL/best_trained_model_3.pth': {'architecture': 'EfficientNetB0', 'img_size': 1000, 'batch_size': 4},
-#     # 'MODELS_FINAL_EVAL/best_trained_model_4_1.pth': {'architecture': 'DenseNet121', 'img_size': 1000, 'batch_size': 4},
-#     # 'MODELS_FINAL_EVAL/best_trained_model_5.pth': {'architecture': 'EfficientNetB0', 'img_size': 1400, 'batch_size': 4}
-    # }
 
 # Mapping of model paths to architectures
 model_info_dict = {
@@ -33,7 +24,7 @@ def extract_true_labels(models_dict, device):
     Extract true labels from the test dataset using the first model's test loader.
     Assumes that all test loaders iterate over the dataset in the same order.
     """
-    first_model_path, first_config = next(iter(models_dict.items()))
+    _, first_config = next(iter(models_dict.items()))
     img_size = first_config['img_size']
     batch_size = first_config['batch_size']
     

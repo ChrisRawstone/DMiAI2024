@@ -11,15 +11,12 @@ from src.utils import get_model
 from src.data.make_dataset import convert_16bit_to_8bit  
 
 def get_image(image) -> np.ndarray:
-    
     image_data = base64.b64decode(image)
     image = Image.open(io.BytesIO(image_data))
     image_array = np.array(image, dtype=np.uint16)
-    
     return image_array
 
 def transform_image(image, img_size):
-
     image = get_image(image)
     image = convert_16bit_to_8bit(image)
 
@@ -27,6 +24,8 @@ def transform_image(image, img_size):
         image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
     else:
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        
+    image = (image / 256).astype(np.uint8)
     
     
     val_transform = A.Compose([
