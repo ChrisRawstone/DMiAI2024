@@ -429,13 +429,12 @@ active_group_durations = defaultdict(int)
 current_map = 1  # Start with map 1
 tick_count = 0
 
-# Parameters for Map 1
 current_phase = 0  # Start with phase P1
 num_phases = 4  # Number of phases in the signal cycle
 delta_t = 5.1
 saturation_flow_rate = 1.6  # Vehicles per second per leg
-yellow_time = 4
-min_green_time = 6
+yellow_time = 4  #4
+min_green_time = 8 #6
 max_green_time = 30
 stay_will = 0.6
 
@@ -491,17 +490,19 @@ def predict_endpoint(request: TrafficSimulationPredictRequestDto):
         
     if legs[2].lanes==['Main', 'Right'] and not(changed_map):
         logger.warning("\033[93mReset detected! Switching to the second signal list.\033[0m")
-        current_map = 2
         # Reset variables for map 2
-        num_phases = 3                  
+        current_map = 2
+        num_phases = 3    
+        # yellow_time = 13  #4 på map 1              
         phase_signals = {
             0: ['A1', 'A1LeftTurn', 'A1RightTurn'],  # Phase 1
             1: ['A2', 'A2LeftTurn', 'A2RightTurn'],  # Phase 2
             2: ['B1', 'B1RightTurn', 'B2']          # Phase 3
         }
-
+        current_phase = 0
         green_durations = [0] * num_phases
         changed_map = True
+        
 
     if current_map == 1:
         # Map 1 logic using the imported functions
