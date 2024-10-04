@@ -1,22 +1,26 @@
-Results for map 2 at tick 26:
+Results for map 2 at tick 310:
 Signal state durations (in ticks):
-Signal A1: defaultdict(<class 'int'>, {'red': 12, 'redamber': 2, 'green': 8, 'amber': 4})
-Signal A1RightTurn: defaultdict(<class 'int'>, {'red': 12, 'redamber': 2, 'green': 8, 'amber': 4})
-Signal A1LeftTurn: defaultdict(<class 'int'>, {'red': 12, 'redamber': 2, 'green': 8, 'amber': 4})
-Signal A2: defaultdict(<class 'int'>, {'red': 21, 'redamber': 2, 'green': 3})
-Signal A2RightTurn: defaultdict(<class 'int'>, {'red': 21, 'redamber': 2, 'green': 3})
-Signal A2LeftTurn: defaultdict(<class 'int'>, {'red': 21, 'redamber': 2, 'green': 3})
-Signal B1: defaultdict(<class 'int'>, {'red': 26})
-Signal B1RightTurn: defaultdict(<class 'int'>, {'red': 26})
-Signal B2: defaultdict(<class 'int'>, {'red': 26})
+Signal A1: defaultdict(<class 'int'>, {'red': 309, 'redamber': 44, 'green': 187, 'amber': 80})
+Signal A1LeftTurn: defaultdict(<class 'int'>, {'red': 309, 'redamber': 44, 'green': 187, 'amber': 80})
+Signal A2: defaultdict(<class 'int'>, {'red': 365, 'redamber': 40, 'green': 135, 'amber': 80})
+Signal A2LeftTurn: defaultdict(<class 'int'>, {'red': 365, 'redamber': 40, 'green': 135, 'amber': 80})
+Signal B1: defaultdict(<class 'int'>, {'red': 364, 'redamber': 40, 'green': 140, 'amber': 76})
+Signal B1LeftTurn: defaultdict(<class 'int'>, {'red': 217, 'redamber': 12, 'green': 57, 'amber': 24})
+Signal B2: defaultdict(<class 'int'>, {'red': 360, 'redamber': 40, 'green': 144, 'amber': 76})
+Signal B2LeftTurn: defaultdict(<class 'int'>, {'red': 213, 'redamber': 12, 'green': 61, 'amber': 24})
+Signal A1RightTurn: defaultdict(<class 'int'>, {'red': 133, 'redamber': 30, 'green': 91, 'amber': 56})
+Signal A2RightTurn: defaultdict(<class 'int'>, {'red': 142, 'redamber': 28, 'green': 84, 'amber': 56})
+Signal B1RightTurn: defaultdict(<class 'int'>, {'red': 147, 'redamber': 28, 'green': 83, 'amber': 52})
 
 Active group durations (in ticks):
-Signal A1: 10 ticks in active group
-Signal A1RightTurn: 10 ticks in active group
-Signal A1LeftTurn: 10 ticks in active group
-Signal A2: 10 ticks in active group
-Signal A2RightTurn: 10 ticks in active group
-Signal A2LeftTurn: 10 ticks in active group
-Signal B1: 6 ticks in active group
-Signal B1RightTurn: 6 ticks in active group
-Signal B2: 6 ticks in active group
+Signal A1: 228 ticks in active group
+Signal A1LeftTurn: 228 ticks in active group
+Signal A2: 159 ticks in active group
+Signal A2LeftTurn: 159 ticks in active group
+Signal B1: 163 ticks in active group
+Signal B1LeftTurn: 65 ticks in active group
+Signal B2: 168 ticks in active group
+Signal B2LeftTurn: 70 ticks in active group
+Signal A1RightTurn: 112 ticks in active group
+Signal A2RightTurn: 100 ticks in active group
+Signal B1RightTurn: 98 ticks in active group
