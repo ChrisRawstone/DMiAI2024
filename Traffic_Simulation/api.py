@@ -429,16 +429,21 @@ active_group_durations = defaultdict(int)
 current_map = 1  # Start with map 1
 tick_count = 0
 
+# Parameters for Map 1
 current_phase = 0  # Start with phase P1
 num_phases = 4  # Number of phases in the signal cycle
 delta_t = 5.1
 saturation_flow_rate = 1.6  # Vehicles per second per leg
-yellow_time = 4  #4
-min_green_time = 8 #6
+yellow_time = 4
+min_green_time = 6
 max_green_time = 30
 stay_will = 0.6
 
 
+# Overlap duration in ticks (assuming 1 tick corresponds to 1 second)
+OVERLAP_DURATION_TICKS = 1
+overlap_ticks_remaining = 0  # Initialize overlap ticks remaining
+next_phase = current_phase  # Initialize next_phase
 
 green_durations = [0] * num_phases  # Track how long each phase has been green
 phase_signals = {
@@ -465,14 +470,12 @@ def index():
 
 
 
-
 @app.post('/predict', response_model=TrafficSimulationPredictResponseDto)
 def predict_endpoint(request: TrafficSimulationPredictRequestDto):
     global current_map, tick_count
-    global current_phase, green_durations, delta_t, saturation_flow_rate, yellow_time, min_green_time, max_green_time, phase_signals, num_phases
-    global current_list, current_timer, current_index, last_switch_tick, adjustment_made, waiting_counts_history
-    global signal_state_durations, active_group_durations
-    global time_to_change, changed_map
+    global current_phase, next_phase, green_durations, delta_t, saturation_flow_rate, yellow_time, min_green_time, max_green_time, phase_signals, num_phases
+    global signal_state_durations, active_group_durations, changed_map
+    global overlap_ticks_remaining  # Include overlap_ticks_remaining in globals
 
     # Decode request data
     vehicles = request.vehicles
@@ -480,36 +483,34 @@ def predict_endpoint(request: TrafficSimulationPredictRequestDto):
     legs = request.legs
     current_time = request.simulation_ticks
     tick_count = current_time
-    
+
     logger.info(f"\033[94mScore at tick: {request.total_score}\033[0m")
     logger.info(f'\033[96mNumber of vehicles at tick {current_time}: {len(vehicles)}\033[0m')
     logger.info(f"Current map: {current_map}")
-    # Check if it's time to switch to the second map based on tick count and vehicle count
-    if tick_count > 280 and tick_count > 100:
-        time_to_change = True
-        
-    if legs[2].lanes==['Main', 'Right'] and not(changed_map):
+
+    # Check if it's time to switch to the second map
+    if legs[2].lanes == ['Main', 'Right'] and not changed_map:
         logger.warning("\033[93mReset detected! Switching to the second signal list.\033[0m")
-        # Reset variables for map 2
         current_map = 2
-        num_phases = 3    
-        # yellow_time = 13  #4 på map 1              
+        # Reset variables for map 2
+        num_phases = 3
         phase_signals = {
             0: ['A1', 'A1LeftTurn', 'A1RightTurn'],  # Phase 1
             1: ['A2', 'A2LeftTurn', 'A2RightTurn'],  # Phase 2
-            2: ['B1', 'B1RightTurn', 'B2']          # Phase 3
+            2: ['B1', 'B1RightTurn', 'B2']           # Phase 3
         }
-        current_phase = 0
         green_durations = [0] * num_phases
+        current_phase = 0  # Reset current_phase for Map 2
+        next_phase = current_phase
+        overlap_ticks_remaining = 0  # Reset overlap
         changed_map = True
-        
 
     if current_map == 1:
-        # Map 1 logic using the imported functions
+        # Map 1 logic with overlap implemented
         leg_data = extract_data_for_optimization1(request)
 
-        # Call compute_pareto_solution
-        next_phase, should_switch = compute_pareto_solution1(
+        # Call compute_pareto_solution1
+        next_phase_decision, should_switch = compute_pareto_solution1(
             leg_data,
             current_phase,
             delta_t,
@@ -521,15 +522,31 @@ def predict_endpoint(request: TrafficSimulationPredictRequestDto):
             stay_will
         )
 
-        if should_switch:
-            current_phase = next_phase
-            green_durations = [0] * num_phases  # Reset all green durations when switching
+        # Overlap logic
+        if overlap_ticks_remaining > 0:
+            # During overlap, keep both current and next phase signals green
+            overlap_ticks_remaining -= 1
+            logger.info(f"Overlap in progress. Ticks remaining: {overlap_ticks_remaining}")
+            green_signal_group = phase_signals[current_phase] + phase_signals[next_phase]
+            if overlap_ticks_remaining == 0:
+                # Overlap finished, switch to next phase
+                current_phase = next_phase
+                green_durations = [0] * num_phases  # Reset green durations
+                logger.info(f"Transition to phase {current_phase} complete.")
         else:
-            green_durations[current_phase] += 1  # Increment time for the current green phase
+            if should_switch:
+                # Start overlap
+                next_phase = next_phase_decision
+                overlap_ticks_remaining = OVERLAP_DURATION_TICKS
+                logger.info(f"Starting overlap between phase {current_phase} and phase {next_phase}.")
+                green_signal_group = phase_signals[current_phase] + phase_signals[next_phase]
+            else:
+                # Continue with current phase
+                green_durations[current_phase] += 1
+                green_signal_group = phase_signals[current_phase]
 
-        # Prepare the response with the correct signals for the new phase
-        green_signal_group = phase_signals[current_phase]  # Get the signal group for the current phase
-        all_signals = [signal.name for signal in signals]  # List of all signal group names
+        # Prepare the response with the correct signals
+        all_signals = [signal.name for signal in signals]
 
         # Count vehicles based on the leg's signal groups
         signal_group_vehicle_counts = defaultdict(int)
@@ -538,7 +555,7 @@ def predict_endpoint(request: TrafficSimulationPredictRequestDto):
                 if vehicle.leg == leg.name:
                     for signal_group in leg.signal_groups:
                         signal_group_vehicle_counts[signal_group] += 1
-        
+
         # Set the signals to green if they are in the green_signal_group, otherwise red
         next_signals = []
         for signal in signals:
@@ -575,11 +592,11 @@ def predict_endpoint(request: TrafficSimulationPredictRequestDto):
         response = TrafficSimulationPredictResponseDto(signals=next_signals)
         return response
     else:
-        # Map 2 logic (existing logic)
+        # Map 2 logic with overlap implemented
         leg_data = extract_data_for_optimization2(request)
 
-        # Call compute_pareto_solution
-        next_phase, should_switch = compute_pareto_solution2(
+        # Call compute_pareto_solution2
+        next_phase_decision, should_switch = compute_pareto_solution2(
             leg_data,
             current_phase,
             delta_t,
@@ -591,15 +608,31 @@ def predict_endpoint(request: TrafficSimulationPredictRequestDto):
             stay_will
         )
 
-        if should_switch:
-            current_phase = next_phase
-            green_durations = [0] * num_phases  # Reset all green durations when switching
+        # Overlap logic for Map 2
+        if overlap_ticks_remaining > 0:
+            # During overlap, keep both current and next phase signals green
+            overlap_ticks_remaining -= 1
+            logger.info(f"Overlap in progress. Ticks remaining: {overlap_ticks_remaining}")
+            green_signal_group = phase_signals[current_phase] + phase_signals[next_phase]
+            if overlap_ticks_remaining == 0:
+                # Overlap finished, switch to next phase
+                current_phase = next_phase
+                green_durations = [0] * num_phases  # Reset green durations
+                logger.info(f"Transition to phase {current_phase} complete.")
         else:
-            green_durations[current_phase] += 1  # Increment time for the current green phase
+            if should_switch:
+                # Start overlap
+                next_phase = next_phase_decision
+                overlap_ticks_remaining = OVERLAP_DURATION_TICKS
+                logger.info(f"Starting overlap between phase {current_phase} and phase {next_phase}.")
+                green_signal_group = phase_signals[current_phase] + phase_signals[next_phase]
+            else:
+                # Continue with current phase
+                green_durations[current_phase] += 1
+                green_signal_group = phase_signals[current_phase]
 
-        # Prepare the response with the correct signals for the new phase
-        green_signal_group = phase_signals[current_phase]  # Get the signal group for the current phase
-        all_signals = [signal.name for signal in signals]  # List of all signal group names
+        # Prepare the response with the correct signals
+        all_signals = [signal.name for signal in signals]
 
         # Count vehicles based on the leg's signal groups
         signal_group_vehicle_counts = defaultdict(int)
