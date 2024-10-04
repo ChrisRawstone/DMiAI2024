@@ -279,8 +279,8 @@ if __name__ == "__main__":
     
     model_loaded_final = get_model(model_name, num_classes=1)
     model_loaded_final, model_name, img_size, batch_size, lr, weight_decay, gamma, alpha, num_epochs, loss_function, optimizer_name, beta1, beta2, epsilon, alpha_optim = load_model_and_info(model_info)
-    # checkpoint = torch.load('MODELS_FINAL_DEPLOY/best_trained_model_8.pth', map_location=device, weights_only=True)
-    # model_loaded_final.load_state_dict(checkpoint)
+    checkpoint = torch.load('MODELS_FINAL_DEPLOY/best_trained_model_8.pth', map_location=device, weights_only=True)
+    model_loaded_final.load_state_dict(checkpoint)
     # model_loaded_final.to(device)
     num_epochs += 5
     model_final = train_model(model_loaded_final, img_size, batch_size, lr, weight_decay, gamma, alpha, num_epochs, loss_function, optimizer_name, beta1, beta2, 

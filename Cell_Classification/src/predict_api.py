@@ -66,8 +66,8 @@ def ensemble_predict(models_dict, image, device):
 
                 # # Move the probability to CPU and convert to a Python scalar
                 # pred_prob = probs# .cpu().item()
-                inputs = image_tensor.to(device, non_blocking=True).unsqueeze(0)
-                outputs = model(inputs)
+                inputs = image_tensor.to(device, non_blocking=True)
+                outputs = model(inputs.unsqueeze(0))
                 probs = torch.sigmoid(outputs).squeeze(1).cpu().numpy()
                 pred_prob = probs.item()  # If you expect a scalar prediction
         
