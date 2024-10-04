@@ -1,3 +1,11 @@
+*wandb*
+*plots*
+*.pth*
+
+*.json
+
+checkpoints/*
+
 docs/site/
 
 # test cache

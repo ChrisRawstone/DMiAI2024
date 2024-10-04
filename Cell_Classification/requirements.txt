@@ -6,3 +6,10 @@ opencv-python
 numpy
 matplotlib
 loguru
+pandas
+opencv-python
+scikit-learn
+albumentations
+tqdm
+optuna
+timm
