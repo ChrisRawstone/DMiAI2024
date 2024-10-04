@@ -8,7 +8,7 @@ import wandb
 import random
 import logging
 import gc
-from models.model import get_models, FocalLoss, get_model_parallel, LabelSmoothingLoss, BalancedBCELoss
+from models.model import get_models, FocalLoss, get_model_parallel, BalancedBCELoss
 from data.make_dataset import LoadTifDataset, get_transforms, get_dataloaders_final_train, create_sampler
 from tqdm import tqdm
 from threading import Lock
@@ -64,7 +64,7 @@ os.makedirs('logs', exist_ok=True)
 ## 2. Objective Function for Optuna
 # =============================================================================================
 
-NUM_EPOCHS = 50
+NUM_EPOCHS = 100
 PATIENCE_EPOCHS = 10
 
 # Initialize global variables for top 5 trials and overall best
@@ -195,32 +195,14 @@ def objective(trial):
     # ---------------------------
     # 1. Hyperparameter Sampling
     # ---------------------------
-    model_name = trial.suggest_categorical('model_name', [
-        #'ViT16',"ViT32",
-                                                          'EfficientNetB0', 'ResNet18','DenseNet121', 'ResNet50', 'ResNet18',
-                                                        #   'EfficientNetB4', 'DenseNet121', 
-                                                        #   'ResNet101', 'ResNet50',
-                                                          #"SwinTransformer_B224", "SwinTransformer_B256", "SwinTransformer_L384", "SwinTransformer_H384", 
-                                                        #    'MobileNetV3',
-                                                          ])
+    model_name = trial.suggest_categorical('model_name', ['EfficientNetB0', 'DenseNet121','ResNet101', 'EfficientNetB4'])
     
-    if model_name in ['ViT16', "ViT32"]:
-        img_size = 224  # Fixed for ViT
-    elif model_name in ['SwinTransformer_B224']:
-        img_size = 224
-    elif model_name in ['SwinTransformer_B256']:
-        img_size = 256
-    elif model_name in ['SwinTransformer_L384', 'SwinTransformer_H384']:
-        img_size = 384
-    else:
-        img_size = trial.suggest_categorical(
-            'img_size',
-            [224, 400, 
-             600, 800
-             #, 1000
-             ])
 
-    batch_size = trial.suggest_categorical('batch_size', [4, 8])
+    img_size = trial.suggest_categorical(
+            'img_size',
+            [800, 1000, 1200, 1400])
+
+    batch_size = trial.suggest_categorical('batch_size', [4])
     lr = trial.suggest_float('lr', 1e-5, 1e-3, log=True)
     weight_decay = trial.suggest_float('weight_decay', 1e-5, 1e-3, log=True)
     
@@ -232,8 +214,7 @@ def objective(trial):
         'BCEWithLogitsLoss',
         'WeightedBCEWithLogitsLoss',
         'FocalLoss',
-        'BalancedCrossEntropyLoss',
-        'LabelSmoothingLoss'
+        'BalancedCrossEntropyLoss'
     ])
     
     # ---------------------------
@@ -255,16 +236,8 @@ def objective(trial):
         'patience': patience}
     
     # Sample optimizer hyperparameters before the fold loop
-    optimizer_name = trial.suggest_categorical('optimizer_name', ['AdamW', 'RMSprop'])
+    optimizer_name = trial.suggest_categorical('optimizer_name', ['Adam','AdamW', 'RMSprop'])
 
-    # Add specific configurations based on the optimizer chosen
-    # if optimizer_name == 'SGD':
-    #     momentum = trial.suggest_float('momentum', 0.8, 0.99)
-    #     optimizer_hyperparams = {
-    #         'momentum': momentum,
-    #         'weight_decay': weight_decay
-    #     }
-    # elif 
     if optimizer_name in ['AdamW', 'Adam']:
         beta1 = trial.suggest_float('beta1', 0.8, 0.99)
         beta2 = trial.suggest_float('beta2', 0.9, 0.999)
@@ -293,7 +266,7 @@ def objective(trial):
         'alpha_optim': optimizer_hyperparams.get('alpha', None)})
 
     wandb.init(
-        project='Cell_Classification_HP',  # Replace with your wandb project name
+        project='Cell_Classification_HP_Final',  # Replace with your wandb project name
         config=wandb_config,
         reinit=True,  # Allows multiple wandb runs in the same script
         name=f"trial_{trial.number}")
@@ -302,16 +275,13 @@ def objective(trial):
     # 3. Load Dataset and Set Up Cross-Validation
     # ---------------------------
     
-    # train_image_dir = Path("data/training_val")
-    # train_csv_path = Path("data/training_val.csv")
-    
     train_image_dir = Path("data/training")
     train_csv_path = Path("data/training.csv")
 
     # Get transforms
     train_transform, val_transform = get_transforms(img_size)
     
-    # Get test set to sanity check
+    # Get test set
     _, test_loader, _ = get_dataloaders_final_train(batch_size, img_size)
 
     # Create the full dataset
@@ -391,21 +361,12 @@ def objective(trial):
             pos_weight_tensor = torch.tensor([pos_weight], dtype=torch.float).to(device)
             criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight_tensor).to(device)
         elif loss_function == 'FocalLoss':
-            criterion = FocalLoss(alpha=alpha, gamma=gamma, logits=True).to(device)
+            criterion = FocalLoss(alpha=alpha, gamma=gamma, logits=True, reduce=True).to(device)
         elif loss_function == 'BalancedCrossEntropyLoss':
             criterion = BalancedBCELoss().to(device)
-        elif loss_function == 'LabelSmoothingLoss':
-            criterion = LabelSmoothingLoss(alpha).to(device)
 
         # Create optimizer using the sampled hyperparameters
-        if optimizer_name == 'SGD':
-            optimizer = optim.SGD(
-                model.parameters(),
-                lr=lr,
-                momentum=optimizer_hyperparams['momentum'],
-                weight_decay=optimizer_hyperparams['weight_decay']
-            )
-        elif optimizer_name in ['AdamW', 'Adam']:
+        if optimizer_name in ['AdamW', 'Adam']:
             optimizer_class = optim.AdamW if optimizer_name == 'AdamW' else optim.Adam
             optimizer = optimizer_class(
                 model.parameters(),
@@ -428,8 +389,7 @@ def objective(trial):
 
         # running model with this configuration
         logging.info("###############################################")
-        logging.info(f"Running model: {model_name} with Image Size: {img_size}, Batch Size: {batch_size}, LR: {lr}, Weight Decay: {weight_decay}, Gamma: {gamma}, Alpha: {alpha}, Loss Function: {loss_function}")
-        logging.info(f"Optimizer: {optimizer_name}")
+        logging.info(f"Running model: {model_name} with Image Size: {img_size}, Batch Size: {batch_size}, LR: {lr}, Weight Decay: {weight_decay}, Gamma: {gamma}, Alpha: {alpha}, Loss Function: {loss_function}, Optimizer: {optimizer_name}")
         logging.info("###############################################")
 
         # ---------------------------
@@ -531,6 +491,22 @@ def objective(trial):
         'loss_function': loss_function,
         'custom_score' : avg_custom_score, 
         'recall_score': recall_score_val}
+    
+    # Validation Phase
+    avg_val_loss, val_preds, val_targets = eval_loop(model, criterion, val_loader, device)
+        
+    # Test Phase
+    _, test_preds, test_targets = eval_loop(model, criterion, test_loader, device)
+    
+    # Calculate performance
+    custom_score, recall_score_val = calc_perf_metrics(val_preds, val_targets)
+    cutstom_score_test, recall_score_test = calc_perf_metrics(test_preds, test_targets)
+    
+    scheduler.step()
+    
+    # Log  score
+    logging.info(f"Final Custom Score VAL : {custom_score:.4f}, Recall Score: {recall_score_val:.4f}")
+    logging.info(f"Final Custom Score TEST: {cutstom_score_test:.4f}, Recall Score: {recall_score_test:.4f}")
 
     # Update best_custom_score if needed
     if avg_custom_score > best_custom_score:

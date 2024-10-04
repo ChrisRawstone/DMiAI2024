@@ -2,26 +2,16 @@
 import os
 import base64
 from pathlib import Path
-from PIL import Image
-
 import numpy as np
 import pandas as pd
 import cv2
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler, ConcatDataset
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 import matplotlib.pyplot as plt
-
-from pathlib import Path
 from typing import Tuple
-import numpy as np
 from sklearn.model_selection import train_test_split
-
-import albumentations as A
-from albumentations.pytorch import ToTensorV2
-from torch.utils.data import DataLoader, WeightedRandomSampler
-import numpy as np
 import logging
 
 def setup_working_directory():
@@ -280,12 +270,6 @@ def get_dataloaders_final_train(batch_size: int, img_size: int) -> Tuple[DataLoa
     Returns:
         Tuple[DataLoader, DataLoader]: Training and validation DataLoaders.
     """
-    # Define paths
-    # train_image_dir = Path("data/training_val")
-    # train_csv_path = Path("data/training_val.csv")
-    
-    # val_image_dir = Path("data/test_val")
-    # val_csv_path = Path("data/test_val.csv")
     
     train_image_dir = Path("data/training")
     train_csv_path = Path("data/training.csv")
@@ -351,6 +335,61 @@ def get_dataloaders_final_train(batch_size: int, img_size: int) -> Tuple[DataLoa
     logging.info("DataLoaders for training and validation have been initialized.")
     return train_loader, val_loader, train_loader_eval
 
+def get_combined_dataloader(batch_size: int, img_size: int) -> DataLoader:    
+    # Define paths for training data
+    train_image_dir = Path("data/training")
+    train_csv_path = Path("data/training.csv")
+    
+    # Define paths for validation data
+    val_image_dir = Path("data/validation")
+    val_csv_path = Path("data/validation.csv")
+
+    # Get transforms (using training transforms for data augmentation consistency)
+    train_transform, _ = get_transforms(img_size)
+
+    # Create training dataset
+    train_dataset = LoadTifDataset(
+        image_dir=train_image_dir,
+        csv_file_path=train_csv_path,
+        transform=train_transform
+    )
+    
+    # Create validation dataset
+    val_dataset = LoadTifDataset(
+        image_dir=val_image_dir,
+        csv_file_path=val_csv_path,
+        transform=train_transform  # Using train_transform to include any augmentations
+    )
+
+    logging.info("Training and validation datasets have been created.")
+
+    # Combine the training and validation datasets
+    combined_dataset = ConcatDataset([train_dataset, val_dataset])
+    logging.info("Combined training and validation datasets.")
+
+    # Extract labels from both datasets
+    # Assuming that 'labels_df' is a DataFrame attribute of LoadTifDataset
+    train_labels = train_dataset.labels_df.iloc[:, 1].values  # Adjust column index as needed
+    val_labels = val_dataset.labels_df.iloc[:, 1].values      # Adjust column index as needed
+    combined_labels = torch.tensor(list(train_labels) + list(val_labels))
+    
+    # Create sampler for the combined dataset
+    sampler = create_sampler(combined_labels.numpy())  # Assuming create_sampler expects a NumPy array
+    logging.info("Sampler for combined dataset has been created.")
+
+    # Create DataLoader for the combined dataset
+    combined_loader = DataLoader(
+        combined_dataset,
+        batch_size=batch_size,
+        sampler=sampler,
+        num_workers=8,
+        pin_memory=True
+    )
+    logging.info("DataLoader for the combined dataset has been initialized.")
+
+    return combined_loader
+
+
 
 def get_dataloaders_train(batch_size: int, img_size: int) -> Tuple[DataLoader, DataLoader]:
     """
@@ -364,8 +403,8 @@ def get_dataloaders_train(batch_size: int, img_size: int) -> Tuple[DataLoader, D
         Tuple[DataLoader, DataLoader]: Training and validation DataLoaders.
     """
     # Define paths
-    train_image_dir = Path("data/training_val")
-    train_csv_path = Path("data/training_val.csv")
+    train_image_dir = Path("data/training")
+    train_csv_path = Path("data/training.csv")
 
     # Get transforms
     train_transform, val_transform = get_transforms(img_size)
@@ -386,7 +425,7 @@ def get_dataloaders_train(batch_size: int, img_size: int) -> Tuple[DataLoader, D
     # Stratified splitting
     train_indices, val_indices = train_test_split(
         indices,
-        test_size=0.15,
+        test_size=0.1,
         stratify=labels,
         random_state=42
     )

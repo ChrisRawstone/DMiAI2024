@@ -11,9 +11,9 @@ import torch
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 
-from src.utils import load_model
-from src.predict_api import predict, transform_image
-from src.data.make_dataset import convert_16bit_to_8bit, get_image
+# from src.utils import load_model
+from src.predict_api import ensemble_predict, transform_image
+# from src.data.make_dataset import convert_16bit_to_8bit, get_image
 
 
 HOST = "0.0.0.0"
@@ -49,7 +49,7 @@ def index():
 def predict_endpoint(request: CellClassificationPredictRequestDto):
     global counter
     try:
-
+        print("Request received")
         # image = get_image(request.cell)
         # image = convert_16bit_to_8bit(image)
 
@@ -69,18 +69,19 @@ def predict_endpoint(request: CellClassificationPredictRequestDto):
         # transformed = val_transform(image=image)
         # image = transformed['image']
 
-        image = transform_image(request.cell)
-
+        image = request.cell
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         print(f"Using device: {device}\n")
 
-        model_checkpoint = 'checkpoints/best_model_optuna.pth'
-        model_info = 'checkpoints/model_info_optuna.json'
+        model_info_dict = {
+        'MODELS_FINAL_DEPLOY/best_trained_model_2.pth': {'architecture': 'EfficientNetB0', 'img_size': 1400, 'batch_size': 4},
+        'MODELS_FINAL_DEPLOY/best_trained_model_2.pth': {'architecture': 'EfficientNetB0', 'img_size': 1400, 'batch_size': 4},
+        'MODELS_FINAL_DEPLOY/best_trained_model_3.pth': {'architecture': 'EfficientNetB0', 'img_size': 1400, 'batch_size': 4},
+        'MODELS_FINAL_DEPLOY/best_trained_model_4.pth': {'architecture': 'EfficientNetB0', 'img_size': 1000, 'batch_size': 4},
+        'MODELS_FINAL_DEPLOY/best_trained_model_5.pth': {'architecture': 'EfficientNetB0', 'img_size': 1400, 'batch_size': 8}
+        }
 
-        model, img_size, model_info = load_model(model_checkpoint, model_info, device)
-        print(f"Loaded model architecture: {model_info['model_name']} with image size: {img_size}\n")
-        
-        preds_binary = predict(model, image, device='cuda')
+        preds_binary = ensemble_predict(model_info_dict, image, device='cuda')
 
         # Return the prediction
         response = CellClassificationPredictResponseDto(
