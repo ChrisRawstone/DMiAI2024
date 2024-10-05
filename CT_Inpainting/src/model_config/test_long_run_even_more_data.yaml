@@ -5,7 +5,7 @@ wandb:
   api_key: c187178e0437c71d461606e312d20dc9f1c6794f
   
 training_params:  
-  seed: 69
+  seed: 6465
   num_epochs: 300
   learning_rate: 0.0001
   batch_size: 4
@@ -18,7 +18,7 @@ training_params:
   crop_mask: False # if true we only provide the part of the mask that overlaps with the tissue
   only_score_within_mask: False # if true we only score the pixels that are within the mask
   clamp_output: True # if true we clamp the output to [0, 1]
-  use_scheduler: True # if true we use a scheduler
+  use_scheduler: False # if true we use a scheduler
 
 hydra:
   run:
