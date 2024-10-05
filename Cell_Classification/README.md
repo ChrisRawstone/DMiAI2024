@@ -7,7 +7,7 @@ This use case is about classifying heterogenous and homogenous human cells!
 
 # Running and Developing the Model
 
-This section provides a detailed guide on how to run and develop the model, including hyperparameter tuning, retraining with optimal parameters, and generating ensemble predictions.
+This section provides a detailed guide on how to run and develop the model, including hyperparameter tuning, retraining with optimal parameters, and generating ensemble predictions. The models we tested were ViTs, Resnets, VGG16, Densenet101 and efficiencynetb0. 
 
 ## 1. Hyperparameter Tuning
 
@@ -41,7 +41,7 @@ The last step involves generating ensemble predictions using the best-performing
 
 - **Voting Classifier**: Implement a voting classifier that combines the predictions from the selected models to make a final, ensemble-based prediction. This approach leverages the strengths of each model to improve overall prediction accuracy.
 
-# To run the code:
+
 # Quickstart
 Clone the repository and change folder to Cell Classification
 
