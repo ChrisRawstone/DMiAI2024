@@ -54,8 +54,8 @@ Install dependencies
 pip install -r requirements.txt
 ```
 
-Make sure to put the models from the link in folder:
-models/MODELS_FINAL_DEPLOY
+Make sure to put the models from the gdrive link in folder:
+Cell_Classification/MODELS_FINAL_DEPLOY
 
 
 ### Serve your endpoint
