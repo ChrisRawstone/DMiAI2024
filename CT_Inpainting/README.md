@@ -1,5 +1,17 @@
 # CT Inpainting
 
+To solve the CT Inpainting challenge we experimented with various Unet architectures and data augmentation. The config for the submitted model can be found in the folder:
+CT_Inpainting/src/model_config/submitted_model.yaml
+To train a model using that config, run the following command from the src folder:
+```cmd
+python CT_Inpainting/src/train_model.py --config-name submitted_model
+```
+We used the model from the epoch with the lowest validation loss when making predictions for the evaluation. The model can be found at:
+<a href="https://drive.google.com/file/d/1Qq0WqmT4RRp7X5e6lM2WnF0Pfey0GyPO/view?usp=sharing"> submitted_model</a>
+
+
+
+The following is the orginal README file from the CT Inpainting challenge.
 <!-- <p align="center">
   <img src="../images/ct_inpainting_banner.jpg" width=1000>
 </p> -->
