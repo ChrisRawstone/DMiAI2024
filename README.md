@@ -5,4 +5,4 @@ Christian Raasteen, Jasmin Thari, Christoffer Høeg Wejendorp, August Valentin N
 
 The solutions can be seen in each folder.
 
-![image](https://github.com/user-attachments/assets/7ecde41f-8afe-4887-8591-a9fcc6a4c741)
+![image](https://github.com/user-attachments/assets/608b0289-1bd1-4bbb-a266-c2566a76af68)
