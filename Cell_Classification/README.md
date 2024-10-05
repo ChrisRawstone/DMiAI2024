@@ -41,6 +41,31 @@ The last step involves generating ensemble predictions using the best-performing
 
 - **Voting Classifier**: Implement a voting classifier that combines the predictions from the selected models to make a final, ensemble-based prediction. This approach leverages the strengths of each model to improve overall prediction accuracy.
 
+# To run the code:
+# Quickstart
+Clone the repository and change folder to Cell Classification
+
+```cmd
+git clone https://github.com/amboltio/DM-i-AI-2024
+cd DM-i-AI-2024/cell-classification
+```
+Install dependencies
+```cmd
+pip install -r requirements.txt
+```
+
+Make sure to put the models from the link in folder:
+models/MODELS_FINAL_DEPLOY
+
+
+### Serve your endpoint
+Serve your endpoint locally and test that everything starts without errors
+
+```cmd
+python api.py
+```
+
+
 ## General information about the competition
 
 
@@ -87,24 +112,7 @@ $$
  
 This formula calculates the accuracy of your model’s predictions for both labels. It measures how well your model balances correctly identifying both heterogeneous (label 0) and homogeneous (label 1) cells, relative to the total number of cells labeled as 0 and 1. This means if it fails to correctly label any of one type of cell, the score will be 0. Therefore, it's important for your model to perform well on both labels.
 
-## Quickstart
-Clone the repository and change folder to the ct-inpainting challenge
 
-```cmd
-git clone https://github.com/amboltio/DM-i-AI-2024
-cd DM-i-AI-2024/cell-classification
-```
-Install dependencies
-```cmd
-pip install -r requirements.txt
-```
-
-### Serve your endpoint
-Serve your endpoint locally and test that everything starts without errors
-
-```cmd
-python api.py
-```
 Open a browser and navigate to http://localhost:4321. You should see a message stating that the endpoint is running. 
 Feel free to change the `HOST` and `PORT` settings in `api.py`. 
 
