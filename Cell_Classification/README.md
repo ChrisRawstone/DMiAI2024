@@ -41,7 +41,7 @@ The last step involves generating ensemble predictions using the best-performing
 
 - **Voting Classifier**: Implement a voting classifier that combines the predictions from the selected models to make a final, ensemble-based prediction. This approach leverages the strengths of each model to improve overall prediction accuracy.
 
-## eneral information about the competition
+## General information about the competition
 
 
 The images in this challenge are fluorescence microscope images of adult human cells collected from bone marrow. Three populations of cells were cultured for 24 hours and then imaged. Using persistent homology, each population was grouped into two subpopulations, where one is morphologically homogenous. The homogenous subpopulation is a relatively small percentage of each population. 
