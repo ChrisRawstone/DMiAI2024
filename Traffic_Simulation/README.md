@@ -1,3 +1,9 @@
+# Deep-Fried Neurons
+THe code structure is pretty self-explainatory. 
+- Run api.py to run the server for port 8080.
+- Run run_sim.py to run it locally. Change sleeptimer and gui settings in top of environment.py
+
+
 # Traffic Simulation
 In this use-case the objective is to control the traffic lights at a congested intersection. 
 Your job is to get as many vehicles through the intersection, thus minimizing the time waiting at the stop lights.
