@@ -345,3 +345,4 @@ cython_debug/
 data_sorted_by_vertebrae/
 models/
 deblur_models/
+submit_scripts

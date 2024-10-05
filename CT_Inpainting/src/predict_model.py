@@ -44,7 +44,9 @@ def predict(corrupted_image: np.ndarray,
     mask = torch.tensor(mask_image, dtype=torch.float32, device=device)        
     tissue = torch.tensor(tissue_image, dtype=torch.float32, device=device)
     
-
+    # NOTE, after competetion end we notice
+    # that the vertebrae_number is normalized differently here compared to the training
+    # left unchanged such that results of our submition can be recreated. 
     vertebrae_normalized = (vertebrae_number - 1) / (33 - 1)  # Assuming vertebrae numbers from 1 to 33
 
     if transform:
@@ -67,8 +69,7 @@ def predict(corrupted_image: np.ndarray,
     output_tensor = torch.clamp(output_tensor, 0, 1)
 
     reconstructed_np = output_tensor[0, 0].detach().cpu().numpy() 
-    reconstructed_image = reconstructed_np * 255.0
-    #reconstructed_image = (reconstructed_np - np.min(reconstructed_np)) / (np.max(reconstructed_np) - np.min(reconstructed_np)) * 255.0
+    reconstructed_image = reconstructed_np * 255.0   
 
     return reconstructed_image
 
@@ -85,68 +86,3 @@ def apply_only_to_mask(corrupted_image:np.ndarray,
     return final_image
 
 
-
-
-# Main function to run the prediction and visualization
-def main():
-    # Set the path to the data directory
-    data_dir = 'data'  # Adjust this to your dataset path
-
-    # Load the dataset using the CTInpaintingDataset class
-    # Define the transformations
-
-    PATIENT_IX = "000_0"
-
-    sample = load_sample(PATIENT_IX)
-    tissue_image = sample["tissue_image"]
-    corrupted_image = sample["corrupted_image"]
-    mask_image = sample["mask_image"]
-    ct_image = sample["ct_image"]
-    vertebrae = sample["vertebrae"]
-
-
-
-
-    model = UNet().to(device)
-    model.load_state_dict(torch.load('models/ct_inpainting_unet_20240928_162225.pth', map_location=device))  # Replace with your model path
-    model.to(device)
-
-
-
-
-    reconstructed_image = predict(corrupted_image, tissue_image, mask_image, vertebrae, model)
-    
-    reconstructed_image = apply_only_to_mask(corrupted_image, tissue_image, mask_image, reconstructed_image)
-    # Load the trained model (Ensure you have the model weights file in the correct path)
-
-
-    # scale back to 0-255 using min max scaling
-
-    # reconstructed_image = reconstructed_image.astype(np.uint8)
-
-
-
-    # give me max value of array
-    # print(np.max(reconstructed_image))
-
-    # Predict reconstruction using the loaded model
-    # output = predict(corrupted_image, tissue_image, mask_image, vertebrae_number, model)
-    # reconstructed_image = output[0,0]
-
-
-    plt.imshow(reconstructed_image , cmap='gray')
-    # plt.imshow(ct_image[0].cpu().numpy() , cmap='gray')
-    # plt.set_title(f'Reconstructed)')
-    plt.axis('off')
-    plt.savefig('plots/reconstructed_image.png')
-
-    # Plot and score the prediction
-    plot_prediction(corrupted_image, tissue_image, mask_image, reconstructed_image, vertebrae, ct_image, name="model_prediction.jpg")
-    
-    # Calculate L1 score
-    l1 = l1_score(ct_image, reconstructed_image)
-    print(f"L1 score: {l1:.03f}") 
-
-# Run the main function if this script is executed  
-if __name__ == "__main__":
-    main()

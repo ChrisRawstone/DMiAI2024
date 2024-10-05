@@ -1,12 +1,8 @@
-# ct_inpainting.py
-
-import os
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
-from PIL import Image
 import wandb  # Import wandb for Weights and Biases integration
 from tqdm import tqdm  # Import tqdm for progress bars
 import matplotlib.pyplot as plt  # Import matplotlib for visualization
@@ -341,13 +337,11 @@ def train(cfg: DictConfig):
     # Finish the W&B run
     wandb.finish()
 
-    if debug:
-        #torch.save(model.state_dict(), 'models/shit_ct_inpainting_unet.pth')
+    if debug:        
         torch.save(model.state_dict(), f'{output_dir}/debug.pth')
     else:
         # get time stamp
-        #timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-
+        
         # Save the trained model
         #torch.save(model.state_dict(), f'models/ct_inpainting_unet_{timestamp}.pth')
         torch.save(model.state_dict(), f'{output_dir}/epoch_{epoch+1}.pth')

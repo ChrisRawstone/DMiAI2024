@@ -12,6 +12,8 @@ from src.predict_model import predict, apply_only_to_mask
 
 HOST = "0.0.0.0"
 PORT = 9090
+# Path to the trained model
+path_to_model = "models/submitted_model.pth"
 
 # Images are loaded via cv2, encoded via base64 and sent as strings
 # See utils.py for details
@@ -56,7 +58,7 @@ def predict_endpoint(request: InpaintingPredictRequestDto):
 
     # Initialize or load the trained model
     model = UNet(in_channels=4, out_channels=1)  # Create an instance of the UNet model
-    model.load_state_dict(torch.load("models/ct_inpainting_unet_20240928_162225.pth", map_location=device))  # Load trained weights
+    model.load_state_dict(torch.load(path_to_model, map_location=device))  # Load trained weights
     model.to(device)
 
     # Predict reconstruction using the model

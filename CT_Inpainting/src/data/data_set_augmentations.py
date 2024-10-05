@@ -70,7 +70,7 @@ class randomMaskAug(BaseAugmentation):
 
     def augmentation(self, mask=None, ct=None, tissue=None):
         """
-        Returns a total of 4 images, corresponding to four 90-degree rotations of the mask applied to the ct image.
+        Returns a total of 4 images, corresponding to four random masks applied to the ct image.
         """
         images = []
         # get 4 random mask from the orginal data folder:
