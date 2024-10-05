@@ -7,7 +7,7 @@ To train a model using that config, run the following command from the src folde
 python CT_Inpainting/src/train_model.py --config-name submitted_model
 ```
 We used the model from the epoch with the lowest validation loss when making predictions for the evaluation. The model can be found at:
-<a href="https://drive.google.com/file/d/1Qq0WqmT4RRp7X5e6lM2WnF0Pfey0GyPO/view?usp=sharing"> scoreboard</a>
+<a href="https://drive.google.com/file/d/1Qq0WqmT4RRp7X5e6lM2WnF0Pfey0GyPO/view?usp=sharing"> submitted_model</a>
 
 
 
