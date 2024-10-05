@@ -4,6 +4,46 @@ This use case is about classifying heterogenous and homogenous human cells!
 
 ![alt text](../images/009.png "Cell")
 
+
+# Running and Developing the Model
+
+This section provides a detailed guide on how to run and develop the model, including hyperparameter tuning, retraining with optimal parameters, and generating ensemble predictions.
+
+## 1. Hyperparameter Tuning
+
+The first step involves hyperparameter tuning using the script `hyperparameter_optimization.py`. This process employs Optuna for optimization and performs nested cross-validation to find the best model configurations.
+
+- **Nested Cross-Validation**: We perform nested cross-validation with different combinations of models, loss functions, and hyperparameters.
+  - **Outer Loop**: Splits the provided training data into folds.
+  - **Inner Loop**: Runs 5-fold cross-validation using stratified sampling based on labels.
+
+- **Model Saving**: The best five models obtained from the hyperparameter tuning are saved for subsequent steps.
+
+## 2. Retraining and Evaluation
+
+After obtaining the optimal hyperparameters and models, we proceed to retrain and evaluate the models, `train_model.py`.
+
+- **Retraining with Optimal Parameters**: Utilize the saved models and their corresponding JSON files containing the hyperparameters to retrain the models.
+
+- **Validation Performance Evaluation**: The retrained models are evaluated on the validation set to assess their performance and ensure they generalize well to unseen data.
+
+- **Final Model Training**: Retrain each model on the entire dataset (combining both training and validation sets) to maximize the amount of data the model learns from.
+
+- **Model Saving**: The final models are saved in the `MODELS_FINAL_DEPLOY` directory. These models are also stored on Google Drive and can be accessed via this link: [https://drive.google.com/drive/folders/11-lnTa6ECFkVqtzerHSxZP-R7UNI7yx_?usp=share_link](#).
+
+## 3. Ensemble Predictions
+
+The last step involves generating ensemble predictions using the best-performing models, `predict_ensemble_model.py`
+
+- **Selecting Top Models**: Choose the best five models based on their performance metrics from the validation step.
+
+- **Probability Thresholding**: Set a probability threshold of **70%**. Predictions with a probability equal to or exceeding this threshold are considered as class one.
+
+- **Voting Classifier**: Implement a voting classifier that combines the predictions from the selected models to make a final, ensemble-based prediction. This approach leverages the strengths of each model to improve overall prediction accuracy.
+
+## eneral information about the competition
+
+
 The images in this challenge are fluorescence microscope images of adult human cells collected from bone marrow. Three populations of cells were cultured for 24 hours and then imaged. Using persistent homology, each population was grouped into two subpopulations, where one is morphologically homogenous. The homogenous subpopulation is a relatively small percentage of each population. 
 
 The challenge is to develop a framework which correctly identifies this homogeneous subpopulation. All the cells came from the same donor and were cultured and imaged in identical conditions. 
@@ -72,39 +112,3 @@ Feel free to change the `HOST` and `PORT` settings in `api.py`.
 There are multiple options:
 - **Local deployment** Ensure that the selected `PORT` on your network is open and redirecting traffic to your machine (this may not be possible depending on your network setup. Usually this involves changing settings in the admin panel of your router). 
 - **Cloud deployment** Create a compute instance on Microsoft Azure, Google Cloud, Amazon Web Services (AWS) or other cloud providers. Repeat the steps above on the compute instance. 
-
-# Running and Developing the Model
-
-This section provides a detailed guide on how to run and develop the model, including hyperparameter tuning, retraining with optimal parameters, and generating ensemble predictions.
-
-## 1. Hyperparameter Tuning
-
-The first step involves hyperparameter tuning using the script `hyperparameter_optimization.py`. This process employs Optuna for optimization and performs nested cross-validation to find the best model configurations.
-
-- **Nested Cross-Validation**: We perform nested cross-validation with different combinations of models, loss functions, and hyperparameters.
-  - **Outer Loop**: Splits the provided training data into folds.
-  - **Inner Loop**: Runs 5-fold cross-validation using stratified sampling based on labels.
-
-- **Model Saving**: The best five models obtained from the hyperparameter tuning are saved for subsequent steps.
-
-## 2. Retraining and Evaluation
-
-After obtaining the optimal hyperparameters and models, we proceed to retrain and evaluate the models, `train_model.py`.
-
-- **Retraining with Optimal Parameters**: Utilize the saved models and their corresponding JSON files containing the hyperparameters to retrain the models.
-
-- **Validation Performance Evaluation**: The retrained models are evaluated on the validation set to assess their performance and ensure they generalize well to unseen data.
-
-- **Final Model Training**: Retrain each model on the entire dataset (combining both training and validation sets) to maximize the amount of data the model learns from.
-
-- **Model Saving**: The final models are saved in the `MODELS_FINAL_DEPLOY` directory. These models are also stored on Google Drive and can be accessed via this link: [https://drive.google.com/drive/folders/11-lnTa6ECFkVqtzerHSxZP-R7UNI7yx_?usp=share_link](#).
-
-## 3. Ensemble Predictions
-
-The last step involves generating ensemble predictions using the best-performing models, `predict_ensemble_model.py`
-
-- **Selecting Top Models**: Choose the best five models based on their performance metrics from the validation step.
-
-- **Probability Thresholding**: Set a probability threshold of **70%**. Predictions with a probability equal to or exceeding this threshold are considered as class one.
-
-- **Voting Classifier**: Implement a voting classifier that combines the predictions from the selected models to make a final, ensemble-based prediction. This approach leverages the strengths of each model to improve overall prediction accuracy.
