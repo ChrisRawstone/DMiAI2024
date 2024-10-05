@@ -1,3 +1,6 @@
-# DMiAI2024
+# DMiAI2024 - Team Deep Fried Neurons Solution
 
-Welcome to the party!
+Our team members:
+Christian Raasteen, Jasmin Thari, Christoffer Høeg Wejendorp, August Valentin Nørgaard Birch og Asbjørn Magnussen.
+
+The solutions can be seen in each task
