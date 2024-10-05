@@ -1,0 +1,25 @@
+debug: false
+wandb:
+  project: CT_Inpainting
+  api_key: key
+training_params:
+  seed: 6465
+  num_epochs: 300
+  learning_rate: 0.0001
+  batch_size: 4
+  data_dir: CT_Inpainting/data
+  train_size: 0.99
+  loss_functions:
+  - l1
+  perceptual_loss_weight: 0.01
+  vgg_layers:
+  - 2
+  - 7
+  - 30
+  augmentations:
+  - randomMaskAug
+  - flipMaskAug
+  crop_mask: false
+  only_score_within_mask: false
+  clamp_output: true
+  use_scheduler: false

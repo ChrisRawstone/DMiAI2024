@@ -2,7 +2,7 @@ debug: True
 
 wandb:
   project: CT_Inpainting
-  api_key: c187178e0437c71d461606e312d20dc9f1c6794f
+  api_key: key
   
 training_params:  
   seed: 42
