@@ -1,5 +1,5 @@
 # Deep-Fried Neurons
-THe code structure is pretty self-explainatory. 
+The code structure is pretty self-explainatory. 
 - Run api.py to run the server for port 8080.
 - Run run_sim.py to run it locally. Change sleeptimer and gui settings in top of environment.py
 
