@@ -1,4 +1,4 @@
-# DM I AI 2024 Cell Classification
+# DM I AI 2024 Cell Classification - Team Deep Fried Neurons implementation
 
 This use case is about classifying heterogenous and homogenous human cells!
 
