@@ -1,6 +1,6 @@
 # 2024 Danish National AI Championship  - 2nd Place Solution
 
-# Team: Deep Fried Neurons
+## Team: Deep Fried Neurons
 
 Our team members:
 Christian Raasteen, Jasmin Thari, Christoffer Høeg Wejendorp, August Valentin Nørgaard Birch and Asbjørn Ebenezer Magnussen.
